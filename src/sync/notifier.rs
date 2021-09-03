@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use log::debug;
+use log::trace;
 use parking_lot::{Condvar, Mutex};
 
+/// A notifier is a synchronization primitive that allows threads to wait for
+/// a signal. The notifier is implemented on top of a condition variable, and
+/// provides broadcast semantics.
 #[derive(Debug, Clone)]
 pub struct Notifier {
     mutex: Arc<Mutex<bool>>,
@@ -17,20 +20,35 @@ impl Notifier {
         }
     }
 
-    /// Wait for a notification
+    /// Lock the notifier, drop the given guard and wait on the condvar.
+    /// This function avoid race conditions by droping the guard only when
+    /// ready to receive notifications.
+    pub fn drop_wait(&self, guard: impl Drop) {
+        let mut lock = self.mutex.lock();
+
+        trace!("# dropping guard...");
+        drop(guard);
+
+        trace!("# waiting for notification...");
+        self.condvar.wait(&mut lock);
+        trace!("# click!");
+    }
+
+    #[allow(dead_code)]
+    /// Wait for a notification.
     pub fn wait(&self) {
         let mut lock = self.mutex.lock();
 
-        debug!("# waiting for notification...");
+        trace!("# waiting for notification...");
         self.condvar.wait(&mut lock);
-        debug!("# click!");
+        trace!("# click!");
     }
 
-    /// Send a notification
+    /// Send a notification to all waiting notifiers.
     pub fn notify(&self) {
-        debug!("# sending notification...");
-
+        trace!("# sending notification...");
         self.condvar.notify_all();
+        trace!("# tac!");
     }
 }
 
