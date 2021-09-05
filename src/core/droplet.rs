@@ -3,3 +3,9 @@
 pub enum Droplet {
     Data,
 }
+
+impl Default for Droplet {
+    fn default() -> Self {
+        Droplet::Data
+    }
+}
