@@ -1,3 +1,5 @@
+use canal;
+
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion, Throughput};
 use crossbeam_channel as crossbeam;
 use flume;
@@ -166,6 +168,53 @@ impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for MyBusReader<T> 
     }
 }
 
+impl<T: Send + Sync + Clone + Default + 'static> Sender<T> for canal::Canal<T> {
+    fn new() -> (Self, JoinHandle<()>) {
+        let canal = canal::Canal::new();
+        let c1 = canal.clone();
+
+        let handle = thread::spawn(move || {
+            let mut i = 0;
+
+            loop {
+                c1.wait(i);
+                c1.get(i).unwrap();
+                i += 1;
+            }
+        });
+
+        (canal, handle)
+    }
+
+    fn send(&mut self, msg: T) {
+        canal::Canal::add(self, msg).unwrap();
+    }
+
+    fn close(self) {
+        canal::Canal::close(&self);
+    }
+}
+
+impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for canal::Canal<T> {
+    fn new() -> (JoinHandle<()>, Self) {
+        let canal = canal::Canal::new();
+        let c1 = canal.clone();
+
+        let handle = thread::spawn(move || while let Ok(_) = c1.add(Default::default()) {});
+
+        (handle, canal)
+    }
+
+    fn recv(&mut self, index: usize) -> T {
+        canal::Canal::wait(self, index);
+        canal::Canal::get(self, index).unwrap()
+    }
+
+    fn close(self) {
+        canal::Canal::close(&self);
+    }
+}
+
 //
 // TEST
 //
@@ -182,9 +231,11 @@ fn test_sender<S: Sender<T>, T: Default>(b: &mut Bencher) {
 
 fn test_receiver<R: Receiver<T>, T>(b: &mut Bencher) {
     let (_, mut r) = R::new();
+    let mut i = 0;
 
     b.iter(|| {
-        black_box(r.recv(0));
+        black_box(r.recv(i));
+        i += 1;
     });
 
     r.close();
@@ -200,7 +251,7 @@ fn sender(c: &mut Criterion) {
     });
     b.bench_function("std", |b| test_sender::<mpsc::Sender<u32>, u32>(b));
     b.bench_function("bus", |b| test_sender::<bus::Bus<u32>, u32>(b));
-    // b.bench_function("aqueduc", |b| test_sender::<Arc<Canal>>(b));
+    b.bench_function("canal", |b| test_sender::<canal::Canal<u32>, u32>(b));
 
     b.finish();
 }
@@ -215,7 +266,7 @@ fn receiver(c: &mut Criterion) {
     });
     b.bench_function("std", |b| test_receiver::<mpsc::Receiver<u32>, u32>(b));
     b.bench_function("bus", |b| test_receiver::<MyBusReader<u32>, u32>(b));
-    // b.bench_function("aqueduc", |b| test_receiver::<Arc<Canal>>(b));
+    b.bench_function("canal", |b| test_receiver::<canal::Canal<u32>, u32>(b));
 
     b.finish();
 }

@@ -1,8 +1,10 @@
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::{atomic::AtomicBool, Arc};
 
 use parking_lot::RwLock;
 
 use crate::sync::Notifier;
+use crate::CanalError;
 
 /// A Canal is an ordered collection of Droplets.
 /// Droplets are can be added to, or retrieved from, the Canal ; but
@@ -12,6 +14,7 @@ use crate::sync::Notifier;
 #[derive(Debug, Clone)]
 pub struct Canal<T> {
     notifier: Notifier,
+    closed: Arc<AtomicBool>,
     data: Arc<RwLock<Vec<T>>>,
 }
 
@@ -23,17 +26,23 @@ where
     pub fn new() -> Self {
         Canal {
             notifier: Notifier::new(),
+            closed: Arc::new(AtomicBool::new(false)),
             data: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
     /// Add a droplet to the canal, and notifies all listeners.
-    pub fn add(&self, droplet: T) {
+    pub fn add(&self, droplet: T) -> Result<(), CanalError> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(CanalError::CanalClosed);
+        }
+
         let mut guard = self.data.write();
 
         guard.push(droplet);
 
         self.notifier.notify();
+        Ok(())
     }
 
     /// Wait for a new droplet to be added to the canal.
@@ -66,6 +75,13 @@ where
 
         guard.len()
     }
+
+    /// Close the canal.
+    /// Further attempts to add a droplet to the canal will fail.
+    /// Droplets can still be retrieved from the canal as long as the canal is not dropped.
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+    }
 }
 
 #[cfg(test)]
@@ -89,7 +105,7 @@ mod test_canal {
             let mut i = 0;
 
             while i < 10 {
-                c1.add(1);
+                c1.add(1).unwrap();
                 i += 1;
             }
 
