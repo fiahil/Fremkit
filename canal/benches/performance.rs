@@ -1,4 +1,3 @@
-use aqueduc::{Aqueduc, Canal, Droplet};
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion, Throughput};
 use crossbeam_channel as crossbeam;
 use flume;
@@ -7,19 +6,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 
-trait Sender: Send + Sized + 'static {
+trait Sender<T>: Send + Sized + 'static {
     fn new() -> (Self, JoinHandle<()>);
-    fn send(&mut self, msg: Droplet);
+    fn send(&mut self, msg: T);
     fn close(self);
 }
 
-trait Receiver: Send + Sized + 'static {
+trait Receiver<T>: Send + Sized + 'static {
     fn new() -> (JoinHandle<()>, Self);
-    fn recv(&mut self, index: usize) -> Droplet;
+    fn recv(&mut self, index: usize) -> T;
     fn close(self);
 }
 
-impl Sender for flume::Sender<Droplet> {
+impl<T: Send + Sync + Clone + Default + 'static> Sender<T> for flume::Sender<T> {
     fn new() -> (Self, JoinHandle<()>) {
         let (tx, rx) = flume::unbounded();
 
@@ -28,14 +27,14 @@ impl Sender for flume::Sender<Droplet> {
         (tx, handle)
     }
 
-    fn send(&mut self, msg: Droplet) {
+    fn send(&mut self, msg: T) {
         flume::Sender::send(self, msg).unwrap();
     }
 
     fn close(self) {}
 }
 
-impl Receiver for flume::Receiver<Droplet> {
+impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for flume::Receiver<T> {
     fn new() -> (JoinHandle<()>, Self) {
         let (tx, rx) = flume::unbounded();
 
@@ -44,14 +43,14 @@ impl Receiver for flume::Receiver<Droplet> {
         (handle, rx)
     }
 
-    fn recv(&mut self, _index: usize) -> Droplet {
+    fn recv(&mut self, _index: usize) -> T {
         flume::Receiver::recv(self).unwrap()
     }
 
     fn close(self) {}
 }
 
-impl Sender for crossbeam::Sender<Droplet> {
+impl<T: Send + Sync + Clone + Default + 'static> Sender<T> for crossbeam::Sender<T> {
     fn new() -> (Self, JoinHandle<()>) {
         let (tx, rx) = crossbeam::unbounded();
 
@@ -60,14 +59,14 @@ impl Sender for crossbeam::Sender<Droplet> {
         (tx, handle)
     }
 
-    fn send(&mut self, msg: Droplet) {
+    fn send(&mut self, msg: T) {
         crossbeam::Sender::send(self, msg).unwrap();
     }
 
     fn close(self) {}
 }
 
-impl Receiver for crossbeam::Receiver<Droplet> {
+impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for crossbeam::Receiver<T> {
     fn new() -> (JoinHandle<()>, Self) {
         let (tx, rx) = crossbeam::unbounded();
 
@@ -76,14 +75,14 @@ impl Receiver for crossbeam::Receiver<Droplet> {
         (handle, rx)
     }
 
-    fn recv(&mut self, _index: usize) -> Droplet {
+    fn recv(&mut self, _index: usize) -> T {
         crossbeam::Receiver::recv(self).unwrap()
     }
 
     fn close(self) {}
 }
 
-impl Sender for mpsc::Sender<Droplet> {
+impl<T: Send + Sync + Clone + Default + 'static> Sender<T> for mpsc::Sender<T> {
     fn new() -> (Self, JoinHandle<()>) {
         let (tx, rx) = mpsc::channel();
 
@@ -92,14 +91,14 @@ impl Sender for mpsc::Sender<Droplet> {
         (tx, handle)
     }
 
-    fn send(&mut self, msg: Droplet) {
+    fn send(&mut self, msg: T) {
         mpsc::Sender::send(self, msg).unwrap();
     }
 
     fn close(self) {}
 }
 
-impl Receiver for mpsc::Receiver<Droplet> {
+impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for mpsc::Receiver<T> {
     fn new() -> (JoinHandle<()>, Self) {
         let (tx, rx) = mpsc::channel();
 
@@ -108,14 +107,14 @@ impl Receiver for mpsc::Receiver<Droplet> {
         (handle, rx)
     }
 
-    fn recv(&mut self, _index: usize) -> Droplet {
+    fn recv(&mut self, _index: usize) -> T {
         mpsc::Receiver::recv(self).unwrap()
     }
 
     fn close(self) {}
 }
 
-impl Sender for bus::Bus<Droplet> {
+impl<T: Send + Sync + Clone + Default + 'static> Sender<T> for bus::Bus<T> {
     fn new() -> (Self, JoinHandle<()>) {
         let mut bus = bus::Bus::new(10000);
         let mut rx = bus.add_rx();
@@ -125,7 +124,7 @@ impl Sender for bus::Bus<Droplet> {
         (bus, handle)
     }
 
-    fn send(&mut self, msg: Droplet) {
+    fn send(&mut self, msg: T) {
         bus::Bus::broadcast(self, msg);
     }
 
@@ -137,7 +136,7 @@ struct MyBusReader<T> {
     c: Arc<AtomicBool>,
 }
 
-impl Receiver for MyBusReader<Droplet> {
+impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for MyBusReader<T> {
     fn new() -> (JoinHandle<()>, Self) {
         let mut bus = bus::Bus::new(10000);
         let rx = bus.add_rx();
@@ -158,7 +157,7 @@ impl Receiver for MyBusReader<Droplet> {
         (handle, reader)
     }
 
-    fn recv(&mut self, _index: usize) -> Droplet {
+    fn recv(&mut self, _index: usize) -> T {
         bus::BusReader::recv(&mut self.b).unwrap()
     }
 
@@ -171,7 +170,7 @@ impl Receiver for MyBusReader<Droplet> {
 // TEST
 //
 
-fn test_sender<S: Sender>(b: &mut Bencher) {
+fn test_sender<S: Sender<T>, T: Default>(b: &mut Bencher) {
     let (mut s, _) = S::new();
 
     b.iter(|| {
@@ -181,7 +180,7 @@ fn test_sender<S: Sender>(b: &mut Bencher) {
     s.close();
 }
 
-fn test_receiver<R: Receiver>(b: &mut Bencher) {
+fn test_receiver<R: Receiver<T>, T>(b: &mut Bencher) {
     let (_, mut r) = R::new();
 
     b.iter(|| {
@@ -195,12 +194,12 @@ fn sender(c: &mut Criterion) {
     let mut b = c.benchmark_group("sender");
     b.throughput(Throughput::Elements(1));
 
-    b.bench_function("flume", |b| test_sender::<flume::Sender<Droplet>>(b));
+    b.bench_function("flume", |b| test_sender::<flume::Sender<u32>, u32>(b));
     b.bench_function("crossbeam", |b| {
-        test_sender::<crossbeam::Sender<Droplet>>(b)
+        test_sender::<crossbeam::Sender<u32>, u32>(b)
     });
-    b.bench_function("std", |b| test_sender::<mpsc::Sender<Droplet>>(b));
-    b.bench_function("bus", |b| test_sender::<bus::Bus<Droplet>>(b));
+    b.bench_function("std", |b| test_sender::<mpsc::Sender<u32>, u32>(b));
+    b.bench_function("bus", |b| test_sender::<bus::Bus<u32>, u32>(b));
     // b.bench_function("aqueduc", |b| test_sender::<Arc<Canal>>(b));
 
     b.finish();
@@ -210,12 +209,12 @@ fn receiver(c: &mut Criterion) {
     let mut b = c.benchmark_group("receiver");
     b.throughput(Throughput::Elements(1));
 
-    b.bench_function("flume", |b| test_receiver::<flume::Receiver<Droplet>>(b));
+    b.bench_function("flume", |b| test_receiver::<flume::Receiver<u32>, u32>(b));
     b.bench_function("crossbeam", |b| {
-        test_receiver::<crossbeam::Receiver<Droplet>>(b)
+        test_receiver::<crossbeam::Receiver<u32>, u32>(b)
     });
-    b.bench_function("std", |b| test_receiver::<mpsc::Receiver<Droplet>>(b));
-    b.bench_function("bus", |b| test_receiver::<MyBusReader<Droplet>>(b));
+    b.bench_function("std", |b| test_receiver::<mpsc::Receiver<u32>, u32>(b));
+    b.bench_function("bus", |b| test_receiver::<MyBusReader<u32>, u32>(b));
     // b.bench_function("aqueduc", |b| test_receiver::<Arc<Canal>>(b));
 
     b.finish();

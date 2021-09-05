@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use log::trace;
 use parking_lot::{Condvar, Mutex};
 
 /// A notifier is a synchronization primitive that allows threads to wait for
@@ -26,12 +25,9 @@ impl Notifier {
     pub fn drop_wait(&self, guard: impl Drop) {
         let mut lock = self.mutex.lock();
 
-        trace!("# dropping guard...");
         drop(guard);
 
-        trace!("# waiting for notification...");
         self.condvar.wait(&mut lock);
-        trace!("# click!");
     }
 
     #[allow(dead_code)]
@@ -39,16 +35,12 @@ impl Notifier {
     pub fn wait(&self) {
         let mut lock = self.mutex.lock();
 
-        trace!("# waiting for notification...");
         self.condvar.wait(&mut lock);
-        trace!("# click!");
     }
 
     /// Send a notification to all waiting notifiers.
     pub fn notify(&self) {
-        trace!("# sending notification...");
         self.condvar.notify_all();
-        trace!("# tac!");
     }
 }
 
@@ -59,14 +51,8 @@ mod test {
     use std::thread;
     use std::time::Duration;
 
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
     #[test]
     fn test_notifier() {
-        init();
-
         let notifier = Notifier::new();
         let b = notifier.clone();
 
@@ -83,8 +69,6 @@ mod test {
 
     #[test]
     fn test_broadcast() {
-        init();
-
         let notifier = Notifier::new();
         let b = notifier.clone();
         let c = notifier.clone();
