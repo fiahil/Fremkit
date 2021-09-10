@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicBool, Arc};
 
@@ -15,7 +16,7 @@ use crate::CanalError;
 pub struct Canal<T> {
     notifier: Notifier,
     closed: Arc<AtomicBool>,
-    data: Arc<RwLock<Vec<T>>>,
+    data: Arc<RwLock<VecDeque<T>>>,
 }
 
 impl<T> Canal<T>
@@ -24,10 +25,12 @@ where
 {
     /// Create a new canal.
     pub fn new() -> Self {
+        let (n, _) = Notifier::new();
+
         Canal {
-            notifier: Notifier::new(),
+            notifier: n,
             closed: Arc::new(AtomicBool::new(false)),
-            data: Arc::new(RwLock::new(Vec::new())),
+            data: Arc::new(RwLock::new(VecDeque::with_capacity(1000))),
         }
     }
 
@@ -39,7 +42,7 @@ where
 
         let mut guard = self.data.write();
 
-        guard.push(droplet);
+        guard.push_back(droplet);
 
         self.notifier.notify();
         Ok(())
@@ -48,16 +51,18 @@ where
     /// Wait for a new droplet to be added to the canal.
     /// Skip waiting if the canal already holds a droplet at the given index.
     ///
-    /// * `current` - The index of the droplet we are waiting for.
-    pub fn wait(&self, current: usize) {
+    /// * `index` - The index of the droplet we are waiting for.
+    pub fn get_blocking(&self, index: usize) -> T {
         let guard = self.data.read();
 
         // if the current index is lower than the current canal size,
         // we skip waiting and return immediately
-        if current < guard.len() {
-            return;
+        if index < guard.len() {
+            return guard.get(index).unwrap().clone();
         } else {
             self.notifier.drop_wait(guard);
+
+            self.get(index).unwrap()
         }
     }
 
@@ -86,21 +91,22 @@ where
 
 #[cfg(test)]
 mod test_canal {
+    use crate::sync::Cooldown;
+
     use super::*;
 
     use std::thread;
-    use std::time::Duration;
 
     #[test]
     fn test_canal() {
         let canal = Canal::new();
-        let notifier = Notifier::new();
-        let (n1, n2) = (notifier.clone(), notifier.clone());
+        let cd = Cooldown::new(2);
         let (c1, c2) = (canal.clone(), canal.clone());
+        let (cd1, cd2) = (cd.clone(), cd.clone());
 
         let h1 = thread::spawn(move || {
             // starts threads simultaneously
-            n1.wait();
+            cd1.ready();
 
             let mut i = 0;
 
@@ -114,13 +120,13 @@ mod test_canal {
 
         let h2 = thread::spawn(move || {
             // starts threads simultaneously
-            n2.wait();
+            cd2.ready();
 
             let mut i = 0;
 
             loop {
-                c2.wait(i);
-                println!("## {:?}", c2.get(i));
+                let x = c2.get_blocking(i);
+                println!("## {:?}", x);
 
                 i += 1;
 
@@ -132,9 +138,54 @@ mod test_canal {
             i
         });
 
-        thread::sleep(Duration::from_millis(250));
-        notifier.notify();
+        cd.wait();
         assert_eq!(h1.join().unwrap(), 10);
         assert_eq!(h2.join().unwrap(), 10);
     }
+
+    // #[test]
+    // fn test_1() {
+    //     let count = 8;
+    //     let r = Canal::<u64>::new();
+    //     let c1 = r.clone();
+
+    //     thread::spawn(move || while let Ok(_) = c1.add(Default::default()) {});
+
+    //     let cd = Cooldown::new(count);
+
+    //     let mut handles = Vec::new();
+    //     for _ in 0..count {
+    //         let r = r.clone();
+    //         let cd = cd.clone();
+
+    //         let handle = thread::spawn(move || {
+    //             cd.ready();
+    //             println!("ping!");
+
+    //             // Warning: Channels are not broadcast!
+    //             for i in 0..20 {
+    //                 r.get_blocking(i as usize);
+    //             }
+    //         });
+
+    //         handles.push(handle);
+    //     }
+
+    //     println!("notifying...");
+    //     cd.wait();
+    //     let start = std::time::Instant::now();
+
+    //     println!("joining threads");
+
+    //     for h in handles {
+    //         h.join().unwrap();
+    //     }
+
+    //     let elapsed = start.elapsed();
+
+    //     r.close();
+
+    //     println!("elapsed : {:?}", elapsed);
+    //     // elapsed
+    // }
 }

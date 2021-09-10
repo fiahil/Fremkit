@@ -12,11 +12,14 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    pub fn new() -> Notifier {
-        Notifier {
+    /// Create a Notifier and return it with a copy
+    pub fn new() -> (Notifier, Notifier) {
+        let n = Notifier {
             mutex: Arc::new(Mutex::new(false)),
             condvar: Arc::new(Condvar::new()),
-        }
+        };
+
+        (n.clone(), n)
     }
 
     /// Lock the notifier, drop the given guard and wait on the condvar.
@@ -30,7 +33,6 @@ impl Notifier {
         self.condvar.wait(&mut lock);
     }
 
-    #[allow(dead_code)]
     /// Wait for a notification.
     pub fn wait(&self) {
         let mut lock = self.mutex.lock();
@@ -53,25 +55,23 @@ mod test {
 
     #[test]
     fn test_notifier() {
-        let notifier = Notifier::new();
-        let b = notifier.clone();
+        let (nx, rx) = Notifier::new();
 
         let h = thread::spawn(move || {
-            b.wait();
+            rx.wait();
         });
 
         thread::sleep(Duration::from_millis(100));
 
-        notifier.notify();
+        nx.notify();
 
         assert!(h.join().is_ok());
     }
 
     #[test]
     fn test_broadcast() {
-        let notifier = Notifier::new();
-        let b = notifier.clone();
-        let c = notifier.clone();
+        let (a, b) = Notifier::new();
+        let c = a.clone();
 
         let h1 = thread::spawn(move || {
             b.wait();
@@ -82,7 +82,7 @@ mod test {
 
         thread::sleep(Duration::from_millis(100));
 
-        notifier.notify();
+        a.notify();
 
         assert!(h1.join().is_ok());
         assert!(h2.join().is_ok());

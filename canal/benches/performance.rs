@@ -1,12 +1,15 @@
 use canal;
 
+use canal::sync::Cooldown;
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion, Throughput};
 use crossbeam_channel as crossbeam;
 use flume;
+use parking_lot::Mutex;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
 trait Sender<T>: Send + Sized + 'static {
     fn new() -> (Self, JoinHandle<()>);
@@ -134,25 +137,27 @@ impl<T: Send + Sync + Clone + Default + 'static> Sender<T> for bus::Bus<T> {
 }
 
 struct MyBusReader<T> {
-    b: bus::BusReader<T>,
-    c: Arc<AtomicBool>,
+    bus: Arc<Mutex<bus::Bus<T>>>,
+    reader: bus::BusReader<T>,
+    closed: Arc<AtomicBool>,
 }
 
 impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for MyBusReader<T> {
     fn new() -> (JoinHandle<()>, Self) {
-        let mut bus = bus::Bus::new(10000);
-        let rx = bus.add_rx();
+        let bus = Arc::new(Mutex::new(bus::Bus::new(10000)));
+        let rx = bus.lock().add_rx();
 
         let c = Arc::new(AtomicBool::new(true));
 
         let reader = MyBusReader {
-            b: rx,
-            c: c.clone(),
+            bus: bus.clone(),
+            reader: rx,
+            closed: c.clone(),
         };
 
         let handle = thread::spawn(move || {
             while c.load(Ordering::Relaxed) {
-                bus.broadcast(Default::default())
+                bus.lock().broadcast(Default::default())
             }
         });
 
@@ -160,11 +165,21 @@ impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for MyBusReader<T> 
     }
 
     fn recv(&mut self, _index: usize) -> T {
-        bus::BusReader::recv(&mut self.b).unwrap()
+        bus::BusReader::recv(&mut self.reader).unwrap()
     }
 
     fn close(self) {
-        self.c.store(false, Ordering::Relaxed);
+        self.closed.store(false, Ordering::Relaxed);
+    }
+}
+
+impl<T: Send + Sync + Clone + Default + 'static> Clone for MyBusReader<T> {
+    fn clone(&self) -> Self {
+        Self {
+            bus: self.bus.clone(),
+            reader: self.bus.lock().add_rx(),
+            closed: self.closed.clone(),
+        }
     }
 }
 
@@ -177,8 +192,7 @@ impl<T: Send + Sync + Clone + Default + 'static> Sender<T> for canal::Canal<T> {
             let mut i = 0;
 
             loop {
-                c1.wait(i);
-                c1.get(i).unwrap();
+                c1.get_blocking(i);
                 i += 1;
             }
         });
@@ -206,8 +220,7 @@ impl<T: Send + Sync + Clone + Default + 'static> Receiver<T> for canal::Canal<T>
     }
 
     fn recv(&mut self, index: usize) -> T {
-        canal::Canal::wait(self, index);
-        canal::Canal::get(self, index).unwrap()
+        canal::Canal::get_blocking(self, index)
     }
 
     fn close(self) {
@@ -241,6 +254,42 @@ fn test_receiver<R: Receiver<T>, T>(b: &mut Bencher) {
     r.close();
 }
 
+fn test_one_to_many<R: Receiver<T> + Clone, T>(b: &mut Bencher, num_threads: usize) {
+    b.iter_custom(|iters| {
+        let (_, r) = R::new();
+        let cd = Cooldown::new(num_threads as i32);
+
+        let mut handles = Vec::new();
+        for _ in 0..num_threads {
+            let mut r = r.clone();
+            let cd = cd.clone();
+
+            let handle = thread::spawn(move || {
+                cd.ready();
+
+                // Warning: Channels are not broadcast!
+                for i in 0..iters {
+                    black_box(r.recv(i as usize));
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        cd.wait();
+        let start = Instant::now();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let elapsed = start.elapsed();
+
+        r.close();
+        elapsed
+    });
+}
+
 fn sender(c: &mut Criterion) {
     let mut b = c.benchmark_group("sender");
     b.throughput(Throughput::Elements(1));
@@ -271,5 +320,40 @@ fn receiver(c: &mut Criterion) {
     b.finish();
 }
 
-criterion_group!(benches, sender, receiver);
+fn one_to_many_8(c: &mut Criterion) {
+    let mut b = c.benchmark_group("one_to_many_8");
+    b.throughput(Throughput::Elements(1));
+
+    b.bench_function("flume", |b| {
+        test_one_to_many::<flume::Receiver<u32>, u32>(b, 8)
+    });
+    b.bench_function("crossbeam", |b| {
+        test_one_to_many::<crossbeam::Receiver<u32>, u32>(b, 8)
+    });
+    b.bench_function("bus", |b| test_one_to_many::<MyBusReader<u32>, u32>(b, 8));
+    b.bench_function("canal", |b| {
+        test_one_to_many::<canal::Canal<u32>, u32>(b, 8)
+    });
+
+    b.finish();
+}
+fn one_to_many_32(c: &mut Criterion) {
+    let mut b = c.benchmark_group("one_to_many_32");
+    b.throughput(Throughput::Elements(1));
+
+    b.bench_function("flume", |b| {
+        test_one_to_many::<flume::Receiver<u32>, u32>(b, 32)
+    });
+    b.bench_function("crossbeam", |b| {
+        test_one_to_many::<crossbeam::Receiver<u32>, u32>(b, 32)
+    });
+    b.bench_function("bus", |b| test_one_to_many::<MyBusReader<u32>, u32>(b, 32));
+    b.bench_function("canal", |b| {
+        test_one_to_many::<canal::Canal<u32>, u32>(b, 32)
+    });
+
+    b.finish();
+}
+
+criterion_group!(benches, sender, receiver, one_to_many_8, one_to_many_32);
 criterion_main!(benches);
