@@ -52,17 +52,20 @@ where
     /// Skip waiting if the canal already holds a droplet at the given index.
     ///
     /// * `index` - The index of the droplet we are waiting for.
-    pub fn get_blocking(&self, index: usize) -> T {
+    pub fn get_blocking(&self, index: usize) -> Option<T> {
         let guard = self.data.read();
 
         // if the current index is lower than the current canal size,
         // we skip waiting and return immediately
         if index < guard.len() {
-            return guard.get(index).unwrap().clone();
+            guard.get(index).cloned() // TODO: we don't need the guard and the clone
         } else {
-            self.notifier.drop_wait(guard);
+            if self.closed.load(Ordering::Acquire) {
+                return None;
+            }
 
-            self.get(index).unwrap()
+            self.notifier.drop_wait(guard);
+            self.get(index)
         }
     }
 
@@ -86,6 +89,9 @@ where
     /// Droplets can still be retrieved from the canal as long as the canal is not dropped.
     pub fn close(&self) {
         self.closed.store(true, Ordering::Release);
+
+        // unblock any waiting threads
+        self.notifier.notify();
     }
 }
 
