@@ -22,20 +22,23 @@ impl Notifier {
         (n.clone(), n)
     }
 
-    /// Lock the notifier, drop the given guard and wait on the condvar.
-    /// This function avoid race conditions by droping the guard only when
-    /// ready to receive notifications.
-    pub fn drop_wait(&self, guard: impl Drop) {
+    /// Wait for a notification.
+    pub fn wait(&self) {
         let mut lock = self.mutex.lock();
-
-        drop(guard);
 
         self.condvar.wait(&mut lock);
     }
 
-    /// Wait for a notification.
-    pub fn wait(&self) {
+    /// Wait for a notification if callback returns true.
+    pub fn wait_if<F>(&self, callback: F)
+    where
+        F: FnOnce() -> bool,
+    {
         let mut lock = self.mutex.lock();
+
+        if !callback() {
+            return;
+        }
 
         self.condvar.wait(&mut lock);
     }

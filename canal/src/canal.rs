@@ -30,19 +30,19 @@ where
         Canal {
             notifier: n,
             closed: Arc::new(AtomicBool::new(false)),
-            data: Arc::new(RwLock::new(VecDeque::with_capacity(1000))),
+            data: Arc::new(RwLock::new(VecDeque::new())),
         }
     }
 
-    /// Add a droplet to the canal, and notifies all listeners.
-    pub fn add(&self, droplet: T) -> Result<(), CanalError> {
+    /// Add a value to the canal, and notifies all listeners.
+    pub fn add(&self, val: T) -> Result<(), CanalError> {
         if self.closed.load(Ordering::Acquire) {
             return Err(CanalError::CanalClosed);
         }
 
         let mut guard = self.data.write();
 
-        guard.push_back(droplet);
+        guard.push_back(val);
 
         self.notifier.notify();
         Ok(())
@@ -57,15 +57,16 @@ where
 
         // if the current index is lower than the current canal size,
         // we skip waiting and return immediately
-        if index < guard.len() {
-            guard.get(index).cloned() // TODO: we don't need the guard and the clone
-        } else {
-            if self.closed.load(Ordering::Acquire) {
-                return None;
-            }
+        match guard.get(index).cloned() {
+            None => {
+                self.notifier.wait_if(move || {
+                    drop(guard);
+                    !self.closed.load(Ordering::Acquire)
+                });
 
-            self.notifier.drop_wait(guard);
-            self.get(index)
+                self.get(index)
+            }
+            opt => opt,
         }
     }
 
@@ -148,50 +149,4 @@ mod test_canal {
         assert_eq!(h1.join().unwrap(), 10);
         assert_eq!(h2.join().unwrap(), 10);
     }
-
-    // #[test]
-    // fn test_1() {
-    //     let count = 8;
-    //     let r = Canal::<u64>::new();
-    //     let c1 = r.clone();
-
-    //     thread::spawn(move || while let Ok(_) = c1.add(Default::default()) {});
-
-    //     let cd = Cooldown::new(count);
-
-    //     let mut handles = Vec::new();
-    //     for _ in 0..count {
-    //         let r = r.clone();
-    //         let cd = cd.clone();
-
-    //         let handle = thread::spawn(move || {
-    //             cd.ready();
-    //             println!("ping!");
-
-    //             // Warning: Channels are not broadcast!
-    //             for i in 0..20 {
-    //                 r.get_blocking(i as usize);
-    //             }
-    //         });
-
-    //         handles.push(handle);
-    //     }
-
-    //     println!("notifying...");
-    //     cd.wait();
-    //     let start = std::time::Instant::now();
-
-    //     println!("joining threads");
-
-    //     for h in handles {
-    //         h.join().unwrap();
-    //     }
-
-    //     let elapsed = start.elapsed();
-
-    //     r.close();
-
-    //     println!("elapsed : {:?}", elapsed);
-    //     // elapsed
-    // }
 }
