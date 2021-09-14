@@ -1,5 +1,6 @@
 mod canal;
 pub mod sync;
+pub mod trial;
 
 pub use crate::canal::Canal;
 pub use crate::error::CanalError;
