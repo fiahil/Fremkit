@@ -1,7 +1,7 @@
 use std::ptr;
 use sync::{AtomicPtr, AtomicUsize, Ordering};
 
-use log::debug;
+use log::trace;
 
 const CAPACITY: usize = 12;
 
@@ -10,7 +10,7 @@ mod sync {
     pub(crate) use loom::sync::atomic::{fence, AtomicPtr, AtomicU8, AtomicUsize, Ordering};
 
     #[cfg(not(loom))]
-    pub(crate) use std::sync::atomic::{fence, AtomicPtr, AtomicU8, AtomicUsize, Ordering};
+    pub(crate) use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 }
 
 pub struct MyVec<T> {
@@ -109,10 +109,7 @@ impl<T> MyBuffer<T> {
         }
 
         let ptr = self.data[index].load(Ordering::Acquire);
-        debug!(
-            "======================== load @ {} | ptr = {:?}",
-            index, ptr
-        );
+        trace!("load @ {} | ptr = {:?}", index, ptr);
 
         // this operation is safe as long as we can guarantee that no reallocation will ever happen
         unsafe { ptr.as_ref() }
@@ -127,9 +124,6 @@ impl<T> MyBuffer<T> {
         // }
 
         self.data[cell_idx].store(value, Ordering::Release);
-        debug!(
-            "======================== store @ {} | ptr = {:?}",
-            cell_idx, value
-        );
+        trace!(" store @ {} | ptr = {:?}", cell_idx, value);
     }
 }
