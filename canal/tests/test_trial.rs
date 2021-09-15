@@ -1,6 +1,7 @@
 use log::debug;
 
-use canal::trial::{MyBuffer, MyVec};
+use canal::trial::{MyBuffer, MySimpleBuffer, MySuperBuffer, MyVec};
+
 use std::sync::Arc;
 
 use loom;
@@ -34,7 +35,7 @@ fn test_eventual_consistency_log() {
     init();
 
     loom::model(|| {
-        let vec = Arc::new(MyBuffer::new());
+        let vec = Arc::new(MyVec::new());
         let v1 = vec.clone();
         let v2 = vec.clone();
 
@@ -86,7 +87,7 @@ fn test_eventual_consistency_log() {
             }
             (None, Some(_), Some(_), None) => {
                 // TODO: WTH? problem with loom?
-                assert!(true, "(Observed state are global)");
+                assert!(false, "(Observed state are global)");
             }
 
             (Some(a), None, None, Some(d)) => {
