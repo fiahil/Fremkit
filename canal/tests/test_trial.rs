@@ -59,20 +59,15 @@ fn test_myvec_pointer() {
     vec.push(41);
     vec.push(42);
 
-    let first: *const i32 = vec.get(1).unwrap();
+    let first = vec.get(1).unwrap();
 
-    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+    println!("first: {:?}", first);
 
     for i in 0..1050 {
         vec.push(i);
     }
 
-    // CRASH: use after free
-    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
-
-    let first: *const i32 = vec.get(1).unwrap();
-
-    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+    println!("first: {:?}", first);
 }
 
 #[test]
@@ -109,9 +104,9 @@ fn test_vec() {
         vec.push(2);
         vec.push(3);
 
-        assert_eq!(vec.get(0), Some(&1));
-        assert_eq!(vec.get(1), Some(&2));
-        assert_eq!(vec.get(2), Some(&3));
+        assert_eq!(vec.get(0).map(|s| *s), Some(1));
+        assert_eq!(vec.get(1).map(|s| *s), Some(2));
+        assert_eq!(vec.get(2).map(|s| *s), Some(3));
         assert_eq!(vec.get(3), None);
     });
 }
@@ -132,7 +127,7 @@ fn test_eventual_consistency_log() {
             let x0 = v1.get(0);
             let x1 = v1.get(1);
 
-            (x0.cloned(), x1.cloned())
+            (x0, x1)
         });
 
         let h2 = thread::spawn(move || {
@@ -141,7 +136,7 @@ fn test_eventual_consistency_log() {
             let x0 = v2.get(0);
             let x1 = v2.get(1);
 
-            (x0.cloned(), x1.cloned())
+            (x0, x1)
         });
 
         let (x0h1, x1h1) = h1.join().unwrap();
@@ -173,50 +168,51 @@ fn test_eventual_consistency_log() {
                 assert!(false, "2: (Read your own write)");
             }
             (None, Some(_), Some(_), None) => {
-                // TODO: WTH? problem with loom?
                 assert!(false, "(Observed state are global)");
             }
 
             (Some(a), None, None, Some(d)) => {
-                assert_eq!(Some(&a), x0, "a == x0 (Observed state are immutable)");
-                assert_eq!(Some(&d), x1, "d == x1 (Observed state are immutable)");
+                assert_eq!(Some(a), x0, "a == x0 (Observed state are immutable)");
+                assert_eq!(Some(d), x1, "d == x1 (Observed state are immutable)");
             }
             (None, Some(b), Some(c), Some(d)) => {
                 assert_eq!(b, d, "b == d (Observed state are in-order)");
-                assert_eq!(Some(&b), x1, "b == x1 (Observed state are immutable)");
-                assert_eq!(Some(&c), x0, "c == x0 (Observed state are immutable)");
-                assert_eq!(Some(&d), x1, "d == x1 (Observed state are immutable)");
+                assert_eq!(Some(b), x1, "b == x1 (Observed state are immutable)");
+                assert_eq!(Some(c), x0, "c == x0 (Observed state are immutable)");
+                assert_eq!(Some(d), x1, "d == x1 (Observed state are immutable)");
             }
             (Some(a), None, Some(c), Some(d)) => {
                 assert_eq!(a, c, "a == c (Observed state are in-order)");
-                assert_eq!(Some(&a), x0, "a == x0 (Observed state are immutable)");
-                assert_eq!(Some(&c), x0, "c == x0 (Observed state are immutable)");
-                assert_eq!(Some(&d), x1, "d == x1 (Observed state are immutable)");
+                assert_eq!(Some(a), x0, "a == x0 (Observed state are immutable)");
+                assert_eq!(Some(c), x0, "c == x0 (Observed state are immutable)");
+                assert_eq!(Some(d), x1, "d == x1 (Observed state are immutable)");
             }
             (Some(a), Some(b), Some(c), None) => {
                 assert_eq!(a, c, "a == c (Observed state are in-order)");
-                assert_eq!(Some(&a), x0, "a == x0 (Observed state are immutable)");
-                assert_eq!(Some(&b), x1, "b == x1 (Observed state are immutable)");
-                assert_eq!(Some(&c), x0, "c == x0 (Observed state are immutable)");
+                assert_eq!(Some(a), x0, "a == x0 (Observed state are immutable)");
+                assert_eq!(Some(b), x1, "b == x1 (Observed state are immutable)");
+                assert_eq!(Some(c), x0, "c == x0 (Observed state are immutable)");
             }
             (Some(a), Some(b), None, Some(d)) => {
                 assert_eq!(b, d, "b == d (Observed state are in-order)");
-                assert_eq!(Some(&a), x0, "a == x0 (Observed state are immutable)");
-                assert_eq!(Some(&b), x1, "b == x1 (Observed state are immutable)");
-                assert_eq!(Some(&d), x1, "d == x1 (Observed state are immutable)");
+                assert_eq!(Some(a), x0, "a == x0 (Observed state are immutable)");
+                assert_eq!(Some(b), x1, "b == x1 (Observed state are immutable)");
+                assert_eq!(Some(d), x1, "d == x1 (Observed state are immutable)");
             }
             (Some(a), Some(b), Some(c), Some(d)) => {
                 assert_eq!(a, c, "a == c");
                 assert_eq!(b, d, "b == d");
-                assert_eq!(Some(&a), x0, "a == x0 (Observed state are immutable)");
-                assert_eq!(Some(&b), x1, "b == x1 (Observed state are immutable)");
-                assert_eq!(Some(&c), x0, "c == x0 (Observed state are immutable)");
-                assert_eq!(Some(&d), x1, "d == x1 (Observed state are immutable)");
+                assert_eq!(Some(a), x0, "a == x0 (Observed state are immutable)");
+                assert_eq!(Some(b), x1, "b == x1 (Observed state are immutable)");
+                assert_eq!(Some(c), x0, "c == x0 (Observed state are immutable)");
+                assert_eq!(Some(d), x1, "d == x1 (Observed state are immutable)");
             }
         }
 
+        let pair = [x0.map(|s| *s), x1.map(|s| *s)];
+
         assert!(
-            [x0, x1] == [Some(&'a'), Some(&'b')] || [x0, x1] == [Some(&'b'), Some(&'a')],
+            pair == [Some('a'), Some('b')] || pair == [Some('b'), Some('a')],
             "final state is always complete."
         );
     });

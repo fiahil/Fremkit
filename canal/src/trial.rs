@@ -18,14 +18,14 @@ mod sync {
     #[cfg(loom)]
     pub(crate) use loom::{
         sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
-        sync::{Mutex, MutexGuard},
+        sync::{Mutex, MutexGuard, RwLock},
         thread::yield_now,
     };
 
     #[cfg(not(loom))]
     pub(crate) use std::{
         sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
-        sync::{Mutex, MutexGuard},
+        sync::{Mutex, MutexGuard, RwLock},
         thread::yield_now,
     };
 }
@@ -114,43 +114,53 @@ unsafe impl<T: Send> Send for MyVec<T> {}
 unsafe impl<T: Sync> Sync for MyVec<T> {}
 
 pub struct MyVec<T> {
-    vec: UnsafeCell<Vec<Pin<Box<T>>>>,
+    vec: Mutex<Vec<Arc<T>>>,
+    // vec: UnsafeCell<Vec<Pin<Box<T>>>>,
     // vec: UnsafeCell<Vec<*mut T>>,
-    lock: AtomicBool,
+    // lock: Mutex<bool>,
 }
 
 impl<T> MyVec<T> {
     pub fn new() -> Self {
         Self {
-            vec: UnsafeCell::new(Vec::new()),
-            lock: AtomicBool::new(false),
+            vec: Mutex::new(Vec::new()),
+            // lock: Mutex::new(false),
         }
     }
 
-    pub fn get(&self, index: usize) -> Option<&T> {
-        let vec: &Vec<_> = unsafe { &*self.vec.get() };
+    pub fn get(&self, index: usize) -> Option<Arc<T>> {
+        // let vec: &Vec<_> = unsafe { &*self.vec.get() };
+        let vec = self.vec.lock().unwrap();
 
-        vec.get(index).map(|p| p.as_ref().get_ref())
+        vec.get(index).cloned()
+        // vec.get(index).map(|p| p.as_ref().get_ref())
         // vec.get(index).and_then(|p| unsafe { p.as_ref() })
     }
 
     pub fn push(&self, value: T) {
         // TODO: slow...
-        let pin = Box::pin(value);
+        // let pin = Box::pin(value);
+        let arc = Arc::from(value);
 
-        let vec: &mut Vec<_> = unsafe { &mut *self.vec.get() };
+        // let vec: &mut Vec<_> = unsafe { &mut *self.vec.get() };
+        let mut vec = self.vec.lock().unwrap();
 
-        while let Err(_) =
-            self.lock
-                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        {
-            yield_now();
-        }
+        // while let Err(_) =
+        //     self.lock
+        //         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        // {
+        //     yield_now();
+        // }
+
+        // let lock = self.lock.lock().unwrap();
 
         // vec.push(&mut value);
-        vec.push(pin);
+        // vec.push(pin);
+        vec.push(arc);
 
-        self.lock.store(false, Ordering::SeqCst);
+        // drop(lock);
+
+        // self.lock.store(false, Ordering::SeqCst);
     }
 }
 
