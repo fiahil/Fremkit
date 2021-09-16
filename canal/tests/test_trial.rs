@@ -1,7 +1,8 @@
 use log::debug;
 
-use canal::trial::{MyBuffer, MySimpleBuffer, MySuperBuffer, MyVec};
+use canal::trial::{MyBuffer, MyList, MySimpleBuffer, MySuperBuffer, MyVec};
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use loom;
@@ -9,6 +10,92 @@ use loom::thread;
 
 fn init() {
     let _ = env_logger::builder().is_test(true).try_init();
+}
+
+#[test]
+fn test_vec_pointer() {
+    let mut vec = Vec::new();
+    let mut previous_cap = vec.capacity();
+    let mut previous_ptr: *mut Vec<_> = &mut vec;
+
+    vec.push(41);
+    vec.push(42);
+
+    let first: *const i32 = &vec[1];
+
+    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+
+    for i in 0..10000 {
+        if previous_cap != vec.capacity() {
+            println!("CAPACITY");
+            println!("{} -> {}", previous_cap, vec.capacity());
+            println!("VEC PTR");
+            println!("{:?} -> {:?}", previous_ptr, &mut vec as *mut Vec<_>);
+            println!(
+                "{:?} as_ptr | {:?} as_mut_ptr",
+                vec.as_ptr(),
+                vec.as_mut_ptr()
+            );
+            println!("");
+            previous_cap = vec.capacity();
+            previous_ptr = &mut vec;
+        }
+
+        vec.push(i);
+    }
+
+    // CRASH: use after free
+    // println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+
+    let first: *const i32 = &vec[1];
+
+    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+}
+
+#[test]
+fn test_myvec_pointer() {
+    let vec = MyVec::new();
+
+    vec.push(41);
+    vec.push(42);
+
+    let first: *const i32 = vec.get(1).unwrap();
+
+    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+
+    for i in 0..1050 {
+        vec.push(i);
+    }
+
+    // CRASH: use after free
+    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+
+    let first: *const i32 = vec.get(1).unwrap();
+
+    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+}
+
+#[test]
+fn test_mylist_pointer() {
+    let vec = MyList::new();
+
+    vec.push(41);
+    vec.push(42);
+
+    let first: *const i32 = vec.get(1).unwrap();
+
+    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+
+    for i in 0..1050 {
+        vec.push(i);
+    }
+
+    // CRASH: use after free
+    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
+
+    let first: *const i32 = vec.get(1).unwrap();
+
+    println!("first: {:?} | {:?}", first as *const i32, unsafe { *first });
 }
 
 #[test]

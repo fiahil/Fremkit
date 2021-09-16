@@ -1,9 +1,9 @@
-use canal::trial::MySimpleBuffer;
+use canal::trial::MyVec;
 
 fn main() {
-    let vec = MySimpleBuffer::new();
+    let vec = MyVec::new();
 
-    for _ in 0..10000 {
-        vec.push(1);
+    for i in 0..10000 {
+        vec.push(i);
     }
 }

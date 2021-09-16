@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc, sync::Barrier, thread, time::Instant};
+use std::{sync::Arc, sync::Barrier, thread, time::Instant};
 
 use canal::trial::{MySimpleBuffer, MySuperBuffer, MyVec};
 
@@ -15,14 +15,6 @@ fn basic(c: &mut Criterion) {
 
         b.iter(|| {
             vec.push(black_box(1));
-        });
-    });
-
-    b.bench_function("vecdeque", |b| {
-        let mut vec = VecDeque::new();
-
-        b.iter(|| {
-            vec.push_back(black_box(1));
         });
     });
 

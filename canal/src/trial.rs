@@ -1,31 +1,121 @@
 use log::{debug, trace};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
-use std::cell::UnsafeCell;
+use std::{
+    cell::UnsafeCell,
+    collections::LinkedList,
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+    pin::Pin,
+    ptr::NonNull,
+    sync::Arc,
+};
 
-use sync::{yield_now, Arc, AtomicBool, AtomicPtr, AtomicUsize, Mutex, MutexGuard, Ordering};
+use sync::{yield_now, AtomicBool, AtomicPtr, AtomicUsize, Mutex, MutexGuard, Ordering};
 
-const CAPACITY: usize = 12;
+const CAPACITY: usize = 32;
 
 mod sync {
     #[cfg(loom)]
     pub(crate) use loom::{
         sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
-        sync::{Arc, Mutex, MutexGuard},
+        sync::{Mutex, MutexGuard},
         thread::yield_now,
     };
 
     #[cfg(not(loom))]
     pub(crate) use std::{
         sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
-        sync::{Arc, Mutex, MutexGuard},
+        sync::{Mutex, MutexGuard},
         thread::yield_now,
     };
 }
 
-unsafe impl<T> Sync for MyVec<T> {}
+unsafe impl<T: Send> Send for MyList<T> {}
+unsafe impl<T: Sync> Sync for MyList<T> {}
+
+struct Slot<T> {
+    data: [UnsafeCell<MaybeUninit<T>>; CAPACITY],
+}
+
+pub struct MyList<T> {
+    vec: UnsafeCell<LinkedList<Pin<Box<Slot<T>>>>>,
+    lock: AtomicBool,
+    len: AtomicUsize,
+}
+
+impl<T> Slot<T> {
+    fn new() -> Self {
+        unsafe { MaybeUninit::zeroed().assume_init() }
+    }
+}
+
+impl<T> MyList<T> {
+    pub fn new() -> Self {
+        Self {
+            vec: UnsafeCell::new(LinkedList::new()),
+            lock: AtomicBool::new(false),
+            len: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        let vec: &LinkedList<_> = unsafe { &*self.vec.get() };
+
+        if index >= self.len.load(Ordering::SeqCst) {
+            return None;
+        }
+
+        unsafe {
+            vec.iter()
+                .enumerate()
+                .find(|(i, _)| i == &(index / CAPACITY))
+                .map(|(_, t)| {
+                    t.as_ref().get_ref().data[index % CAPACITY]
+                        .get()
+                        .as_ref()
+                        .unwrap()
+                        .as_ptr()
+                        .as_ref()
+                        .unwrap()
+                })
+        }
+    }
+
+    pub fn push(&self, value: T) {
+        let token = self.len.fetch_add(1, Ordering::SeqCst);
+
+        while let Err(_) =
+            self.lock
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        {
+            yield_now();
+        }
+
+        let vec: &mut LinkedList<_> = unsafe { &mut *self.vec.get() };
+
+        if token / CAPACITY >= vec.len() {
+            // New slot
+            vec.push_back(Box::pin(Slot::new()));
+        }
+
+        unsafe {
+            let r = vec.back_mut().unwrap();
+            let x = r.as_ref().get_ref();
+            (&mut *x.data[token % CAPACITY].get())
+                .as_mut_ptr()
+                .write(value)
+        }
+
+        self.lock.store(false, Ordering::SeqCst);
+    }
+}
+
+unsafe impl<T: Send> Send for MyVec<T> {}
+unsafe impl<T: Sync> Sync for MyVec<T> {}
 
 pub struct MyVec<T> {
-    vec: UnsafeCell<Vec<T>>,
+    vec: UnsafeCell<Vec<Pin<Box<T>>>>,
+    // vec: UnsafeCell<Vec<*mut T>>,
     lock: AtomicBool,
 }
 
@@ -38,12 +128,18 @@ impl<T> MyVec<T> {
     }
 
     pub fn get(&self, index: usize) -> Option<&T> {
-        let vec: &Vec<T> = unsafe { &*self.vec.get() };
+        let vec: &Vec<_> = unsafe { &*self.vec.get() };
 
-        vec.get(index)
+        vec.get(index).map(|p| p.as_ref().get_ref())
+        // vec.get(index).and_then(|p| unsafe { p.as_ref() })
     }
 
     pub fn push(&self, value: T) {
+        // TODO: slow...
+        let pin = Box::pin(value);
+
+        let vec: &mut Vec<_> = unsafe { &mut *self.vec.get() };
+
         while let Err(_) =
             self.lock
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -51,9 +147,8 @@ impl<T> MyVec<T> {
             yield_now();
         }
 
-        let vec: &mut Vec<T> = unsafe { &mut *self.vec.get() };
-
-        vec.push(value);
+        // vec.push(&mut value);
+        vec.push(pin);
 
         self.lock.store(false, Ordering::SeqCst);
     }
