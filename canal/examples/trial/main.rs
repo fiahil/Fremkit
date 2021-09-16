@@ -1,7 +1,7 @@
-use canal::trial::MyVec;
+use canal::Canal;
 
 fn main() {
-    let vec = MyVec::new();
+    let vec = Canal::new();
 
     for i in 0..10000 {
         vec.push(i);
