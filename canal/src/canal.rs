@@ -43,7 +43,7 @@ where
     pub fn wait_for(&self, index: usize) -> Option<Arc<T>> {
         // if the current index is already in the log,
         // we skip waiting and return immediately
-        self.notifier.wait_if(|| self.log.get(index).is_some());
+        self.notifier.wait_if(|| self.log.get(index).is_none());
 
         // we are now expected to find a droplet at the given index
         self.log.get(index)
@@ -58,5 +58,73 @@ where
     /// Get the length of the canal.
     pub fn len(&self) -> usize {
         self.log.len()
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use log::debug;
+
+    use crate::sync::thread;
+
+    use super::*;
+
+    fn canal() {
+        let n = Notifier::new();
+        let (a, b) = (n.clone(), n.clone());
+
+        let canal = Canal::new();
+        let (c1, c2) = (canal.clone(), canal.clone());
+
+        let h1 = thread::spawn(move || {
+            // starts threads simultaneously
+            a.wait();
+
+            for i in 0..10 {
+                c1.push(i);
+            }
+        });
+
+        let h2 = thread::spawn(move || {
+            // starts threads simultaneously
+            b.wait();
+
+            for i in 0..10 {
+                let x = c2.wait_for(i);
+                debug!("## {:?}", x);
+            }
+        });
+
+        while n.count() < 2 {
+            thread::yield_now();
+        }
+
+        n.notify();
+
+        assert!(h1.join().is_ok());
+        assert!(h2.join().is_ok());
+    }
+
+    #[cfg(not(loom))]
+    mod test {
+        use super::*;
+
+        #[test]
+        fn test_canal() {
+            canal()
+        }
+    }
+    #[cfg(loom)]
+    mod test {
+
+        use super::*;
+
+        use loom;
+
+        #[test]
+        fn test_canal() {
+            loom::model(canal)
+        }
     }
 }
