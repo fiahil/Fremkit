@@ -1,157 +1,314 @@
-use std::{sync::Arc, sync::Barrier, thread, time::Instant};
+use std::fmt::Debug;
+use std::sync::{Arc, Barrier};
+use std::thread;
+use std::time::Instant;
 
-use canal::trial::{MySimpleBuffer, MySuperBuffer, MyVec};
+use canal::Log;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use crossbeam_channel::unbounded;
+use bus;
+use criterion::measurement::WallTime;
+use criterion::{
+    black_box, criterion_group, criterion_main, BenchmarkGroup, Criterion, Throughput,
+};
+use crossbeam_channel;
 use parking_lot::RwLock;
 
-fn basic(c: &mut Criterion) {
-    let mut b = c.benchmark_group("basic");
+trait Lx: Send + Sized + 'static {
+    type Item: Default;
+    type Sender: Tx;
+    type Receiver: Rx;
+
+    fn new_pair() -> (Self::Sender, Self::Receiver);
+    fn new_tx(tx: &Self::Sender) -> Self::Sender;
+    fn new_rx(rx: &Self::Receiver) -> Self::Receiver;
+}
+
+trait Tx: Send + Sized + 'static {
+    type Item: Default;
+
+    fn write(&mut self, msg: Self::Item);
+}
+
+trait Rx: Send + Sized + 'static {
+    type Item: Default;
+
+    fn read(&mut self, index: usize) -> Option<Self::Item>;
+}
+
+//
+// VECTOR
+//
+impl<T: Send + Sync + Debug + Default + Clone + 'static> Lx for Vec<T> {
+    type Item = T;
+    type Sender = Arc<RwLock<Vec<T>>>;
+    type Receiver = Arc<RwLock<Vec<T>>>;
+
+    fn new_pair() -> (Self::Sender, Self::Receiver) {
+        let v = Arc::new(RwLock::new(Vec::new()));
+
+        (v.clone(), v)
+    }
+
+    fn new_tx(tx: &Self::Sender) -> Self::Sender {
+        tx.clone()
+    }
+
+    fn new_rx(rx: &Self::Receiver) -> Self::Receiver {
+        rx.clone()
+    }
+}
+
+impl<T: Send + Sync + Debug + Default + 'static> Tx for Arc<RwLock<Vec<T>>> {
+    type Item = T;
+
+    fn write(&mut self, msg: Self::Item) {
+        let mut lock = RwLock::write(&self);
+
+        lock.push(msg);
+    }
+}
+
+impl<T: Send + Sync + Debug + Default + Clone + 'static> Rx for Arc<RwLock<Vec<T>>> {
+    type Item = T;
+
+    fn read(&mut self, index: usize) -> Option<Self::Item> {
+        let lock = RwLock::read(&self);
+
+        lock.get(index).cloned()
+    }
+}
+
+//
+// CROSSBEAM
+//
+impl<T: Send + Sync + Debug + Default + 'static> Lx for crossbeam_channel::Sender<T> {
+    type Item = T;
+    type Sender = Self;
+    type Receiver = crossbeam_channel::Receiver<T>;
+
+    fn new_pair() -> (Self::Sender, Self::Receiver) {
+        let (tx, rx) = crossbeam_channel::unbounded();
+
+        (tx, rx)
+    }
+
+    fn new_tx(tx: &Self::Sender) -> Self::Sender {
+        tx.clone()
+    }
+
+    fn new_rx(rx: &Self::Receiver) -> Self::Receiver {
+        rx.clone()
+    }
+}
+
+impl<T: Send + Sync + Debug + Default + 'static> Tx for crossbeam_channel::Sender<T> {
+    type Item = T;
+
+    fn write(&mut self, msg: Self::Item) {
+        self.send(msg).unwrap();
+    }
+}
+
+impl<T: Send + Sync + Debug + Default + 'static> Rx for crossbeam_channel::Receiver<T> {
+    type Item = T;
+
+    fn read(&mut self, _index: usize) -> Option<Self::Item> {
+        self.recv().ok()
+    }
+}
+
+//
+// BUS
+//
+impl<T: Send + Sync + Clone + Debug + Default + 'static> Lx for bus::Bus<T> {
+    type Item = T;
+    type Sender = Self;
+    type Receiver = bus::BusReader<T>;
+
+    fn new_pair() -> (Self::Sender, Self::Receiver) {
+        let mut b = bus::Bus::new(1_000_000);
+
+        let rx = b.add_rx();
+
+        (b, rx)
+    }
+
+    fn new_tx(_tx: &Self::Sender) -> Self::Sender {
+        unimplemented!()
+    }
+
+    fn new_rx(_rx: &Self::Receiver) -> Self::Receiver {
+        unimplemented!()
+    }
+}
+
+impl<T: Send + Sync + Debug + Default + 'static> Tx for bus::Bus<T> {
+    type Item = T;
+
+    fn write(&mut self, msg: Self::Item) {
+        let _ = self.try_broadcast(msg);
+    }
+}
+
+impl<T: Send + Sync + Clone + Debug + Default + 'static> Rx for bus::BusReader<T> {
+    type Item = T;
+
+    fn read(&mut self, _index: usize) -> Option<Self::Item> {
+        self.recv().ok()
+    }
+}
+
+//
+// LOG
+//
+impl<T: Send + Sync + Clone + Debug + Default + 'static> Lx for Log<T> {
+    type Item = T;
+    type Sender = Arc<Self>;
+    type Receiver = Arc<Self>;
+
+    fn new_pair() -> (Self::Sender, Self::Receiver) {
+        let l = Arc::new(Log::new());
+
+        (l.clone(), l)
+    }
+
+    fn new_tx(tx: &Self::Sender) -> Self::Sender {
+        tx.clone()
+    }
+
+    fn new_rx(rx: &Self::Receiver) -> Self::Receiver {
+        rx.clone()
+    }
+}
+
+impl<T: Send + Sync + Debug + Default + 'static> Tx for Arc<Log<T>> {
+    type Item = T;
+
+    fn write(&mut self, msg: Self::Item) {
+        self.push(msg);
+    }
+}
+
+impl<T: Send + Sync + Clone + Debug + Default + 'static> Rx for Arc<Log<T>> {
+    type Item = Arc<T>;
+
+    fn read(&mut self, index: usize) -> Option<Self::Item> {
+        self.get(index)
+    }
+}
+
+fn single_thread_append<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str) {
+    b.bench_function(name, |b| {
+        let (mut tx, _rx) = T::new_pair();
+
+        b.iter(|| {
+            tx.write(black_box(Default::default()));
+        });
+    });
+}
+
+fn multi_thread_append<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str, n_threads: usize) {
+    b.bench_function(name, |b| {
+        let (tx, _rx) = T::new_pair();
+
+        b.iter_custom(|iters| {
+            let mut threads = Vec::with_capacity(n_threads);
+            let barrier = Arc::new(Barrier::new(n_threads + 1));
+
+            for _ in 0..n_threads {
+                let b = barrier.clone();
+                let mut tx = T::new_tx(&tx);
+
+                let thread = thread::spawn(move || {
+                    b.wait();
+
+                    for _ in 0..iters {
+                        tx.write(black_box(Default::default()));
+                    }
+                });
+
+                threads.push(thread);
+            }
+
+            let start = Instant::now();
+            barrier.wait();
+
+            for thread in threads {
+                thread.join().unwrap();
+            }
+
+            start.elapsed()
+        });
+    });
+}
+
+fn bench_single_thread_append(c: &mut Criterion) {
+    let mut b = c.benchmark_group("single thread append");
     b.throughput(Throughput::Elements(1));
 
     b.bench_function("vec", |b| {
         let mut vec = Vec::new();
 
         b.iter(|| {
-            vec.push(black_box(1));
+            vec.push(black_box(1u64));
         });
     });
 
-    b.bench_function("trial", |b| {
-        let vec = MyVec::new();
-
-        b.iter(|| {
-            vec.push(black_box(1));
-        });
-    });
-
-    b.bench_function("crossbeam", |b| {
-        let (tx, _rx) = unbounded();
-
-        b.iter(|| {
-            tx.send(black_box(1)).unwrap();
-        });
-    });
+    single_thread_append::<Vec<u64>>(&mut b, "rwlock_vec");
+    single_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam");
+    single_thread_append::<bus::Bus<u64>>(&mut b, "bus");
+    single_thread_append::<Log<u64>>(&mut b, "my_log");
 
     b.finish();
 }
 
-fn basic_concurrent(c: &mut Criterion) {
-    let mut b = c.benchmark_group("basic_concurrent");
+fn bench_single_thread_append_box(c: &mut Criterion) {
+    let mut b = c.benchmark_group("single thread append box");
     b.throughput(Throughput::Elements(1));
 
     b.bench_function("vec", |b| {
-        let vec = Arc::new(RwLock::new(Vec::new()));
+        let mut vec = Vec::new();
 
-        b.iter_custom(|iters| {
-            let v1 = vec.clone();
-            let v2 = vec.clone();
-            let b = Arc::new(Barrier::new(3));
-            let b1 = b.clone();
-            let b2 = b.clone();
-
-            let h1 = thread::spawn(move || {
-                b1.wait();
-
-                for i in 0..iters {
-                    let mut g = v1.write();
-
-                    g.push(black_box(i));
-                }
-            });
-
-            let h2 = thread::spawn(move || {
-                b2.wait();
-
-                for i in 0..iters {
-                    let mut g = v2.write();
-
-                    g.push(black_box(i));
-                }
-            });
-
-            let start = Instant::now();
-            b.wait();
-            h1.join().unwrap();
-            h2.join().unwrap();
-
-            start.elapsed()
+        b.iter(|| {
+            vec.push(black_box(Box::new(1u64)));
         });
     });
 
-    b.bench_function("trial", |b| {
-        let vec = Arc::new(MyVec::new());
-
-        b.iter_custom(|iters| {
-            let v1 = vec.clone();
-            let v2 = vec.clone();
-            let b = Arc::new(Barrier::new(3));
-            let b1 = b.clone();
-            let b2 = b.clone();
-
-            let h1 = thread::spawn(move || {
-                b1.wait();
-
-                for i in 0..iters {
-                    v1.push(black_box(i));
-                }
-            });
-
-            let h2 = thread::spawn(move || {
-                b2.wait();
-
-                for i in 0..iters {
-                    v2.push(black_box(i));
-                }
-            });
-
-            let start = Instant::now();
-            b.wait();
-            h1.join().unwrap();
-            h2.join().unwrap();
-
-            start.elapsed()
-        });
-    });
-
-    b.bench_function("crossbeam", |b| {
-        let (tx, _rx) = unbounded();
-
-        b.iter_custom(|iters| {
-            let v1 = tx.clone();
-            let v2 = tx.clone();
-            let b = Arc::new(Barrier::new(3));
-            let b1 = b.clone();
-            let b2 = b.clone();
-
-            let h1 = thread::spawn(move || {
-                b1.wait();
-
-                for i in 0..iters {
-                    v1.send(black_box(i)).unwrap();
-                }
-            });
-
-            let h2 = thread::spawn(move || {
-                b2.wait();
-
-                for i in 0..iters {
-                    v2.send(black_box(i)).unwrap();
-                }
-            });
-
-            let start = Instant::now();
-            b.wait();
-            h1.join().unwrap();
-            h2.join().unwrap();
-
-            start.elapsed()
-        });
-    });
+    single_thread_append::<Vec<Box<u64>>>(&mut b, "rwlock_vec");
+    single_thread_append::<crossbeam_channel::Sender<Box<u64>>>(&mut b, "crossbeam");
+    single_thread_append::<bus::Bus<Box<u64>>>(&mut b, "bus");
+    single_thread_append::<Log<Box<u64>>>(&mut b, "my_log");
 
     b.finish();
 }
 
-criterion_group!(benches, basic, basic_concurrent);
+fn bench_2_thread_append(c: &mut Criterion) {
+    let mut b = c.benchmark_group("2 thread append");
+    b.throughput(Throughput::Elements(2));
+
+    multi_thread_append::<Vec<u64>>(&mut b, "rwlock_vec", 2);
+    multi_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 2);
+    multi_thread_append::<Log<u64>>(&mut b, "my_log", 2);
+
+    b.finish();
+}
+
+fn bench_8_thread_append(c: &mut Criterion) {
+    let mut b = c.benchmark_group("8 thread append");
+    b.throughput(Throughput::Elements(8));
+
+    multi_thread_append::<Vec<u64>>(&mut b, "rwlock_vec", 8);
+    multi_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 8);
+    multi_thread_append::<Log<u64>>(&mut b, "my_log", 8);
+
+    b.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_single_thread_append,
+    bench_single_thread_append_box,
+    bench_2_thread_append,
+    bench_8_thread_append
+);
 criterion_main!(benches);

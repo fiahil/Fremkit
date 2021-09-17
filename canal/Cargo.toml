@@ -17,11 +17,9 @@ loom = { git = "https://github.com/fiahil/loom.git", branch = "logging_re", feat
 
 [dev-dependencies]
 env_logger = "0.9.0"
-# bus = "2.2.3"
+bus = "2.2.3"
 criterion = { version = "0.3.5", features = ["html_reports"] }
 crossbeam-channel = "0.5.1"
-# flume = "0.10.9"
-loom = { git = "https://github.com/fiahil/loom.git", branch = "logging_re", features = ["checkpoint"] }
 
 [[bench]]
 name = "trial"
