@@ -21,6 +21,9 @@ bus = "2.2.3"
 criterion = { version = "0.3.5", features = ["html_reports"] }
 crossbeam-channel = "0.5.1"
 
+[lib]
+bench = false
+
 [[bench]]
 name = "log"
 harness = false
