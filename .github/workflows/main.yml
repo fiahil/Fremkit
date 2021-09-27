@@ -40,7 +40,7 @@ jobs:
         run: make lint
 
       - name: Run benchmarks
-        run: cargo bench -- --output-format bencher | tail -n 1 tee output.txt
+        run: cargo bench -- --output-format bencher | tail -n 1 | tee output.txt
 
       - name: Store benchmark result
         uses: rhysd/github-action-benchmark@v1
