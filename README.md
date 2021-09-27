@@ -1,2 +1,4 @@
-# Aqueduc
-A simple way to connect tasks with each other
+# Fremkit
+
+A Fremkit is effectively a desert survival kit.
+
