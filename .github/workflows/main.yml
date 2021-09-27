@@ -1,0 +1,22 @@
+name: Tests
+
+on: [push, workflow_dispatch]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Lint
+        run: make lint
+
+      - name: Run Loom tests
+        run: make loom
+
+      - name: Run tests
+        run: make test
