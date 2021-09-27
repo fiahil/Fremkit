@@ -14,10 +14,7 @@ pub struct Canal<T> {
     log: Arc<Log<T>>,
 }
 
-impl<T> Canal<T>
-where
-    T: Clone,
-{
+impl<T> Canal<T> {
     /// Create a new canal.
     pub fn new() -> Self {
         let notifier = Notifier::new();
@@ -58,6 +55,17 @@ where
     /// Get the length of the canal.
     pub fn len(&self) -> usize {
         self.log.len()
+    }
+
+    /// Is the canal empty?
+    pub fn is_empty(&self) -> bool {
+        self.log.is_empty()
+    }
+}
+
+impl<T> Default for Canal<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

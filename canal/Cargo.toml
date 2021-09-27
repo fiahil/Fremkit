@@ -22,5 +22,5 @@ criterion = { version = "0.3.5", features = ["html_reports"] }
 crossbeam-channel = "0.5.1"
 
 [[bench]]
-name = "trial"
+name = "log"
 harness = false

@@ -113,7 +113,7 @@ impl<T: Send + Sync + Debug + Default + 'static> Rx for crossbeam_channel::Recei
     type Item = T;
 
     fn read(&mut self, _index: usize) -> Option<Self::Item> {
-        self.recv().ok()
+        self.try_recv().ok()
     }
 }
 
@@ -242,6 +242,46 @@ fn multi_thread_append<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str, n_th
     });
 }
 
+fn multi_thread_read<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str, n_threads: usize) {
+    b.bench_function(name, |b| {
+        let (tx, rx) = T::new_pair();
+
+        b.iter_custom(|iters| {
+            let mut threads = Vec::with_capacity(n_threads);
+            let barrier = Arc::new(Barrier::new(n_threads + 1));
+
+            for _ in 0..n_threads {
+                let b = barrier.clone();
+                let mut rx = T::new_rx(&rx);
+                let mut tx = T::new_tx(&tx);
+
+                for _ in 0..iters {
+                    tx.write(black_box(Default::default()));
+                }
+
+                let thread = thread::spawn(move || {
+                    b.wait();
+
+                    for i in 0..iters {
+                        rx.read(i as usize);
+                    }
+                });
+
+                threads.push(thread);
+            }
+
+            let start = Instant::now();
+            barrier.wait();
+
+            for thread in threads {
+                thread.join().unwrap();
+            }
+
+            start.elapsed()
+        });
+    });
+}
+
 fn bench_single_thread_append(c: &mut Criterion) {
     let mut b = c.benchmark_group("single thread append");
     b.throughput(Throughput::Elements(1));
@@ -262,22 +302,22 @@ fn bench_single_thread_append(c: &mut Criterion) {
     b.finish();
 }
 
-fn bench_single_thread_append_box(c: &mut Criterion) {
-    let mut b = c.benchmark_group("single thread append box");
+fn bench_single_thread_append_arc(c: &mut Criterion) {
+    let mut b = c.benchmark_group("single thread append arc");
     b.throughput(Throughput::Elements(1));
 
     b.bench_function("vec", |b| {
         let mut vec = Vec::new();
 
         b.iter(|| {
-            vec.push(black_box(Box::new(1u64)));
+            vec.push(black_box(Arc::new(1u64)));
         });
     });
 
-    single_thread_append::<Vec<Box<u64>>>(&mut b, "rwlock_vec");
-    single_thread_append::<crossbeam_channel::Sender<Box<u64>>>(&mut b, "crossbeam");
-    single_thread_append::<bus::Bus<Box<u64>>>(&mut b, "bus");
-    single_thread_append::<Log<Box<u64>>>(&mut b, "my_log");
+    single_thread_append::<Vec<Arc<u64>>>(&mut b, "rwlock_vec");
+    single_thread_append::<crossbeam_channel::Sender<Arc<u64>>>(&mut b, "crossbeam");
+    single_thread_append::<bus::Bus<Arc<u64>>>(&mut b, "bus");
+    single_thread_append::<Log<Arc<u64>>>(&mut b, "my_log");
 
     b.finish();
 }
@@ -304,11 +344,35 @@ fn bench_8_thread_append(c: &mut Criterion) {
     b.finish();
 }
 
+fn bench_2_thread_read(c: &mut Criterion) {
+    let mut b = c.benchmark_group("2 thread read");
+    b.throughput(Throughput::Elements(2));
+
+    multi_thread_read::<Vec<u64>>(&mut b, "rwlock_vec", 2);
+    multi_thread_read::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 2);
+    multi_thread_read::<Log<u64>>(&mut b, "my_log", 2);
+
+    b.finish();
+}
+
+fn bench_8_thread_read(c: &mut Criterion) {
+    let mut b = c.benchmark_group("8 thread read");
+    b.throughput(Throughput::Elements(8));
+
+    multi_thread_read::<Vec<u64>>(&mut b, "rwlock_vec", 8);
+    multi_thread_read::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 8);
+    multi_thread_read::<Log<u64>>(&mut b, "my_log", 8);
+
+    b.finish();
+}
+
 criterion_group!(
     benches,
     bench_single_thread_append,
-    bench_single_thread_append_box,
+    bench_single_thread_append_arc,
     bench_2_thread_append,
-    bench_8_thread_append
+    bench_8_thread_append,
+    bench_2_thread_read,
+    bench_8_thread_read
 );
 criterion_main!(benches);

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use crate::sync::{AtomicUsize, Mutex, Ordering};
+use crate::sync::{AtomicUsize, Ordering, RwLock};
 
 /// A Log stores an immutable sequence of items.
 /// It's a wrapper around a vector of `Arc<T>`, and it's thread-safe.
 #[derive(Debug)]
 pub struct Log<T> {
-    data: Mutex<Vec<Arc<T>>>,
+    data: RwLock<Vec<Arc<T>>>,
     len: AtomicUsize,
 }
 
@@ -14,7 +14,7 @@ impl<T> Log<T> {
     /// Create a new empty Log.
     pub fn new() -> Self {
         Self {
-            data: Mutex::new(Vec::new()),
+            data: RwLock::new(Vec::new()),
             len: AtomicUsize::new(0),
         }
     }
@@ -24,10 +24,15 @@ impl<T> Log<T> {
         self.len.load(Ordering::Relaxed)
     }
 
+    /// Is the Log empty ?
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Get an item from the Log.
     /// Returns `None` if the given index is out of bounds.
     pub fn get(&self, index: usize) -> Option<Arc<T>> {
-        let vec = self.data.lock();
+        let vec = self.data.read();
 
         vec.get(index).cloned()
     }
@@ -35,14 +40,20 @@ impl<T> Log<T> {
     /// Append an item to the Log.
     /// Returns the index of the appended item.
     pub fn push(&self, value: T) -> usize {
-        // TODO: Slow: allocate and move value
+        // Slow: allocate and move value
         let arc = Arc::from(value);
 
-        let mut vec = self.data.lock();
+        let mut vec = self.data.write();
 
         vec.push(arc);
 
         self.len.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+impl<T> Default for Log<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
