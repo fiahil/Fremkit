@@ -1,0 +1,29 @@
+[package]
+name = "canal"
+version = "0.1.0"
+edition = "2018"
+authors = ["Quentin Leffray <fiahil@gmail.com>"]
+description = "A simple channel-like broadcast log"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "^0.4"
+parking_lot = "^0.11"
+# thiserror = "^1.0"
+
+[target.'cfg(loom)'.dependencies]
+loom = { git = "https://github.com/fiahil/loom.git", branch = "logging_re", features = ["checkpoint"] }
+
+[dev-dependencies]
+env_logger = "0.9.0"
+bus = "2.2.3"
+criterion = { version = "0.3.5", features = ["html_reports"] }
+crossbeam-channel = "0.5.1"
+
+[lib]
+bench = false
+
+[[bench]]
+name = "log"
+harness = false

@@ -1,0 +1,55 @@
+name: Tests
+
+on: [push, workflow_dispatch]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  loom_tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Lint
+        run: make lint
+
+      - name: Run Loom tests
+        run: make loom
+
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Lint
+        run: make lint
+
+      - name: Run tests
+        run: make test
+
+  benchmarks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Lint
+        run: make lint
+
+      - name: Run benchmarks
+        run: cargo bench -- --plotting-backend plotters --output-format bencher | tee output.txt
+
+      - name: Store benchmark result
+        uses: rhysd/github-action-benchmark@v1
+        with:
+          tool: "cargo"
+          output-file-path: output.txt
+          alert-threshold: "20%"
+          # GitHub API token to make a commit comment
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Enable alert commit comment
+          comment-on-alert: true
+          fail-on-alert: true
