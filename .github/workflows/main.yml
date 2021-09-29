@@ -83,13 +83,13 @@ jobs:
           key: ${{ runner.os }}-benchmark
 
       - name: Store benchmark result
-        uses: rhysd/github-action-benchmark@v1.8.1
+        uses: rhysd/github-action-benchmark@v1
         with:
           tool: "cargo"
           output-file-path: output.txt
           # Where the previous data file is stored
           external-data-json-path: ./cache/benchmark-data.json
-          alert-threshold: "20%"
+          alert-threshold: "80%"
           # GitHub API token to make a commit comment
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Enable alert commit comment
