@@ -40,10 +40,10 @@ jobs:
         run: make lint
 
       - name: Run benchmarks
-        run: cargo bench -- --output-format bencher | grep bench > output.txt && cat output.txt
+        run: cargo bench -- --output-format bencher | tee output.txt
 
       - name: Store benchmark result
-        uses: rhysd/github-action-benchmark@v1
+        uses: rhysd/github-action-benchmark@v1.8.1
         with:
           tool: "cargo"
           output-file-path: output.txt
