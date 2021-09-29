@@ -283,7 +283,7 @@ fn multi_thread_read<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str, n_thre
 }
 
 fn bench_single_thread_append(c: &mut Criterion) {
-    let mut b = c.benchmark_group("single thread append");
+    let mut b = c.benchmark_group("single_thread_append");
     b.throughput(Throughput::Elements(1));
 
     b.bench_function("vec", |b| {
@@ -303,7 +303,7 @@ fn bench_single_thread_append(c: &mut Criterion) {
 }
 
 fn bench_single_thread_append_arc(c: &mut Criterion) {
-    let mut b = c.benchmark_group("single thread append arc");
+    let mut b = c.benchmark_group("single_thread_append_arc");
     b.throughput(Throughput::Elements(1));
 
     b.bench_function("vec", |b| {
@@ -323,7 +323,7 @@ fn bench_single_thread_append_arc(c: &mut Criterion) {
 }
 
 fn bench_2_thread_append(c: &mut Criterion) {
-    let mut b = c.benchmark_group("2 thread append");
+    let mut b = c.benchmark_group("2_thread_append");
     b.throughput(Throughput::Elements(2));
 
     multi_thread_append::<Vec<u64>>(&mut b, "rwlock_vec", 2);
@@ -334,7 +334,7 @@ fn bench_2_thread_append(c: &mut Criterion) {
 }
 
 fn bench_8_thread_append(c: &mut Criterion) {
-    let mut b = c.benchmark_group("8 thread append");
+    let mut b = c.benchmark_group("8_thread_append");
     b.throughput(Throughput::Elements(8));
 
     multi_thread_append::<Vec<u64>>(&mut b, "rwlock_vec", 8);
@@ -345,7 +345,7 @@ fn bench_8_thread_append(c: &mut Criterion) {
 }
 
 fn bench_2_thread_read(c: &mut Criterion) {
-    let mut b = c.benchmark_group("2 thread read");
+    let mut b = c.benchmark_group("2_thread_read");
     b.throughput(Throughput::Elements(2));
 
     multi_thread_read::<Vec<u64>>(&mut b, "rwlock_vec", 2);
@@ -356,7 +356,7 @@ fn bench_2_thread_read(c: &mut Criterion) {
 }
 
 fn bench_8_thread_read(c: &mut Criterion) {
-    let mut b = c.benchmark_group("8 thread read");
+    let mut b = c.benchmark_group("8_thread_read");
     b.throughput(Throughput::Elements(8));
 
     multi_thread_read::<Vec<u64>>(&mut b, "rwlock_vec", 8);
