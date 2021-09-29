@@ -53,3 +53,4 @@ jobs:
           # Enable alert commit comment
           comment-on-alert: true
           fail-on-alert: true
+          auto-push: false
