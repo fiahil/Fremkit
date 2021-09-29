@@ -1,13 +1,41 @@
-// use canal::Canal;
+use std::io::Write;
+
+use bytes::Bytes;
+use canal::Canal;
 
 /// An Aqueduc is a collection of Canals. It is the main entry point for
 /// creating Canals and spawning threads.
 #[derive(Debug, Clone)]
-pub struct Aqueduc {}
+pub struct Aqueduc {
+    canal: Canal<Bytes>,
+}
 
 impl Aqueduc {
     pub fn new() -> Self {
-        Aqueduc {}
+        Aqueduc {
+            canal: Canal::new(),
+        }
+    }
+
+    pub fn spawnjoin(&self, program: &str, args: &[&str]) {
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let mut stdin = child.stdin.take().unwrap();
+
+        if self.canal.len() > 0 {
+            let input = self.canal.get(self.canal.len() - 1).unwrap();
+
+            stdin.write(&input).unwrap();
+        }
+
+        let output = child.wait_with_output().unwrap();
+
+        self.canal.push(output.stdout.into());
     }
 }
 
@@ -29,6 +57,13 @@ mod test {
     fn test_aqueduc() {
         init();
 
-        let _ = Aqueduc::new();
+        let aq = Aqueduc::new();
+
+        aq.spawnjoin("python3", &["00-hello.py"]);
+        aq.spawnjoin("python3", &["01-world.py"]);
+
+        for (i, b) in aq.canal.iter().enumerate() {
+            println!("{}: {:?}", i, b);
+        }
     }
 }

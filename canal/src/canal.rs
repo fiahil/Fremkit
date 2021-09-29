@@ -61,11 +61,34 @@ impl<T> Canal<T> {
     pub fn is_empty(&self) -> bool {
         self.log.is_empty()
     }
+
+    pub fn iter(&self) -> CanalIterator<T> {
+        CanalIterator {
+            idx: 0,
+            canal: self,
+        }
+    }
 }
 
 impl<T> Default for Canal<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct CanalIterator<'a, T> {
+    idx: usize,
+    canal: &'a Canal<T>,
+}
+
+impl<'a, T> Iterator for CanalIterator<'a, T> {
+    type Item = Arc<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let idx = self.idx;
+        self.idx += 1;
+
+        self.canal.get(idx)
     }
 }
 
