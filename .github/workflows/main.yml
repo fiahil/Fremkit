@@ -94,6 +94,4 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Enable alert commit comment
           comment-on-alert: true
-          
-  
-          fail-on-alert: true
+          fail-on-alert: false
