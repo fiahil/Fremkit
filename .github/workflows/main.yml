@@ -21,7 +21,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-loom-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-loom-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Lint
         run: make lint
@@ -44,7 +44,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-tests-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-tests-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Lint
         run: make lint
@@ -67,7 +67,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-benchmarks-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-benchmarks-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Lint
         run: make lint
@@ -89,7 +89,7 @@ jobs:
           output-file-path: output.txt
           # Where the previous data file is stored
           external-data-json-path: ./cache/benchmark-data.json
-          alert-threshold: "80%"
+          alert-threshold: "130%"
           # GitHub API token to make a commit comment
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Enable alert commit comment
