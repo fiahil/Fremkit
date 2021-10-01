@@ -1,3 +1,4 @@
+use std::ptr::NonNull;
 use std::sync::Arc;
 
 use crate::sync::{AtomicUsize, Ordering, RwLock};
@@ -6,7 +7,7 @@ use crate::sync::{AtomicUsize, Ordering, RwLock};
 /// It's a wrapper around a vector of `Arc<T>`, and it's thread-safe.
 #[derive(Debug)]
 pub struct Log<T> {
-    data: RwLock<Vec<Arc<T>>>,
+    data: RwLock<Vec<NonNull<T>>>,
     len: AtomicUsize,
 }
 
@@ -31,25 +32,30 @@ impl<T> Log<T> {
 
     /// Get an item from the Log.
     /// Returns `None` if the given index is out of bounds.
-    pub fn get(&self, index: usize) -> Option<Arc<T>> {
+    pub fn get(&self, index: usize) -> Option<&T> {
         let vec = self.data.read();
 
-        vec.get(index).cloned()
+        vec.get(index).map(|ptr| unsafe { ptr.as_ref() })
     }
 
     /// Append an item to the Log.
     /// Returns the index of the appended item.
     pub fn push(&self, value: T) -> usize {
         // Slow: allocate and move value
-        let arc = Arc::from(value);
+        // let arc = Arc::from(value);
+
+        let boxed = Box::new(value);
 
         let mut vec = self.data.write();
 
-        vec.push(arc);
+        vec.push(Box::leak(boxed).into());
 
         self.len.fetch_add(1, Ordering::Relaxed)
     }
 }
+
+unsafe impl<T: Sync + Send> Send for Log<T> {}
+unsafe impl<T: Sync + Send> Sync for Log<T> {}
 
 impl<T> Default for Log<T> {
     fn default() -> Self {
@@ -115,7 +121,7 @@ mod test {
             let x0 = v1.get(0);
             let x1 = v1.get(1);
 
-            (x0, x1)
+            (x0.cloned(), x1.cloned())
         });
 
         let h2 = thread::spawn(move || {
@@ -124,12 +130,12 @@ mod test {
             let x0 = v2.get(0);
             let x1 = v2.get(1);
 
-            (x0, x1)
+            (x0.cloned(), x1.cloned())
         });
 
         let (x0h1, x1h1) = h1.join().unwrap();
         let (x0h2, x1h2) = h2.join().unwrap();
-        let (x0, x1) = (vec.get(0), vec.get(1));
+        let (x0, x1) = (vec.get(0).cloned(), vec.get(1).cloned());
 
         debug!(
             "0: h1(a) {:<10} h2(c) {:<10}  f {:<10}",
@@ -197,7 +203,7 @@ mod test {
             }
         }
 
-        let pair = [x0.map(|s| *s), x1.map(|s| *s)];
+        let pair = [x0, x1];
 
         assert!(
             pair == [Some('a'), Some('b')] || pair == [Some('b'), Some('a')],

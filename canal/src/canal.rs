@@ -37,18 +37,18 @@ impl<T> Canal<T> {
     /// Skip waiting if the canal already holds a droplet at the given index.
     ///
     /// * `index` - The index of the droplet we are waiting for.
-    pub fn wait_for(&self, index: usize) -> Arc<T> {
+    pub fn wait_for(&self, index: usize) -> Option<&T> {
         // if the current index is already in the log,
         // we skip waiting and return immediately
         self.notifier.wait_if(|| self.log.get(index).is_none());
 
         // we are now expected to find a droplet at the given index
-        self.log.get(index).unwrap()
+        self.log.get(index)
     }
 
     /// Get a droplet from the canal.
     /// Return None if the index is out of bounds.
-    pub fn get(&self, index: usize) -> Option<Arc<T>> {
+    pub fn get(&self, index: usize) -> Option<&T> {
         self.log.get(index)
     }
 

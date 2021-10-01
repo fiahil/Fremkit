@@ -190,10 +190,10 @@ impl<T: Send + Sync + Debug + Default + 'static> Tx for Arc<Log<T>> {
 }
 
 impl<T: Send + Sync + Clone + Debug + Default + 'static> Rx for Arc<Log<T>> {
-    type Item = Arc<T>;
+    type Item = T;
 
     fn read(&mut self, index: usize) -> Option<Self::Item> {
-        self.get(index)
+        self.get(index).cloned()
     }
 }
 
