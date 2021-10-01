@@ -45,6 +45,22 @@ impl Default for Aqueduc {
     }
 }
 
+#[derive(Debug, Clone)]
+enum Command<'a> {
+    Program {
+        cmd: &'a str,
+        args: &'a [&'a str],
+        input: Option<String>,
+        output: Option<String>,
+    },
+}
+
+impl Default for Command<'_> {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -59,8 +75,21 @@ mod test {
 
         let aq = Aqueduc::new();
 
-        aq.spawnjoin("python3", &["00-hello.py"]);
-        aq.spawnjoin("python3", &["01-world.py"]);
+        aq.spawn(Command::Program {
+            cmd: "python3",
+            args: &["01-world.py"],
+            input: Some("hello-world".to_string()),
+            output: Some("hello-world".to_string()),
+        });
+
+        aq.spawn(Command::Program {
+            cmd: "python3",
+            args: &["00-hello.py"],
+            input: None,
+            output: Some("hello-world".to_string()),
+        });
+
+        aq.join();
 
         for (i, b) in aq.canal.iter().enumerate() {
             println!("{}: {:?}", i, b);
