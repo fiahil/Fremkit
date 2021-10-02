@@ -8,7 +8,7 @@ use crate::sync::Notifier;
 /// they cannot be removed.
 ///
 /// The same canal can serve as a sender and receiver.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Canal<T> {
     notifier: Notifier,
     log: Arc<Log<T>>,
@@ -37,13 +37,13 @@ impl<T> Canal<T> {
     /// Skip waiting if the canal already holds a droplet at the given index.
     ///
     /// * `index` - The index of the droplet we are waiting for.
-    pub fn wait_for(&self, index: usize) -> Option<Arc<T>> {
+    pub fn wait_for(&self, index: usize) -> Arc<T> {
         // if the current index is already in the log,
         // we skip waiting and return immediately
         self.notifier.wait_if(|| self.log.get(index).is_none());
 
         // we are now expected to find a droplet at the given index
-        self.log.get(index)
+        self.log.get(index).unwrap()
     }
 
     /// Get a droplet from the canal.
@@ -68,6 +68,13 @@ impl<T> Canal<T> {
             canal: self,
         }
     }
+
+    pub fn blocking_iter(&self) -> CanalBlockingIterator<T> {
+        CanalBlockingIterator {
+            idx: 0,
+            canal: self,
+        }
+    }
 }
 
 impl<T> Default for Canal<T> {
@@ -76,7 +83,21 @@ impl<T> Default for Canal<T> {
     }
 }
 
+impl<T> Clone for Canal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            notifier: self.notifier.clone(),
+            log: self.log.clone(),
+        }
+    }
+}
+
 pub struct CanalIterator<'a, T> {
+    idx: usize,
+    canal: &'a Canal<T>,
+}
+
+pub struct CanalBlockingIterator<'a, T> {
     idx: usize,
     canal: &'a Canal<T>,
 }
@@ -89,6 +110,17 @@ impl<'a, T> Iterator for CanalIterator<'a, T> {
         self.idx += 1;
 
         self.canal.get(idx)
+    }
+}
+
+impl<'a, T> Iterator for CanalBlockingIterator<'a, T> {
+    type Item = Arc<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let idx = self.idx;
+        self.idx += 1;
+
+        Some(self.canal.wait_for(idx))
     }
 }
 
