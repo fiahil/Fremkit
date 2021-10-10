@@ -18,7 +18,7 @@ trait Lx: Send + Sized + 'static {
     type Sender: Tx;
     type Receiver: Rx;
 
-    fn new_pair() -> (Self::Sender, Self::Receiver);
+    fn new_pair(size: usize) -> (Self::Sender, Self::Receiver);
     fn new_tx(tx: &Self::Sender) -> Self::Sender;
     fn new_rx(rx: &Self::Receiver) -> Self::Receiver;
 }
@@ -43,8 +43,8 @@ impl<T: Send + Sync + Debug + Default + Clone + 'static> Lx for Vec<T> {
     type Sender = Arc<RwLock<Vec<T>>>;
     type Receiver = Arc<RwLock<Vec<T>>>;
 
-    fn new_pair() -> (Self::Sender, Self::Receiver) {
-        let v = Arc::new(RwLock::new(Vec::new()));
+    fn new_pair(size: usize) -> (Self::Sender, Self::Receiver) {
+        let v = Arc::new(RwLock::new(Vec::with_capacity(size)));
 
         (v.clone(), v)
     }
@@ -86,8 +86,8 @@ impl<T: Send + Sync + Debug + Default + 'static> Lx for crossbeam_channel::Sende
     type Sender = Self;
     type Receiver = crossbeam_channel::Receiver<T>;
 
-    fn new_pair() -> (Self::Sender, Self::Receiver) {
-        let (tx, rx) = crossbeam_channel::unbounded();
+    fn new_pair(size: usize) -> (Self::Sender, Self::Receiver) {
+        let (tx, rx) = crossbeam_channel::bounded(size);
 
         (tx, rx)
     }
@@ -125,8 +125,8 @@ impl<T: Send + Sync + Clone + Debug + Default + 'static> Lx for bus::Bus<T> {
     type Sender = Self;
     type Receiver = bus::BusReader<T>;
 
-    fn new_pair() -> (Self::Sender, Self::Receiver) {
-        let mut b = bus::Bus::new(1_000_000);
+    fn new_pair(size: usize) -> (Self::Sender, Self::Receiver) {
+        let mut b = bus::Bus::new(size);
 
         let rx = b.add_rx();
 
@@ -166,8 +166,8 @@ impl<T: Send + Sync + Clone + Debug + Default + 'static> Lx for Log<T> {
     type Sender = Arc<Self>;
     type Receiver = Arc<Self>;
 
-    fn new_pair() -> (Self::Sender, Self::Receiver) {
-        let l = Arc::new(Log::new());
+    fn new_pair(size: usize) -> (Self::Sender, Self::Receiver) {
+        let l = Arc::new(Log::new(size));
 
         (l.clone(), l)
     }
@@ -199,19 +199,25 @@ impl<T: Send + Sync + Clone + Debug + Default + 'static> Rx for Arc<Log<T>> {
 
 fn single_thread_append<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str) {
     b.bench_function(name, |b| {
-        let (mut tx, _rx) = T::new_pair();
+        b.iter_custom(|iters| {
+            let (mut tx, _rx) = T::new_pair(iters as usize);
 
-        b.iter(|| {
-            tx.write(black_box(Default::default()));
+            let start = Instant::now();
+
+            for _ in 0..iters {
+                tx.write(black_box(Default::default()));
+            }
+
+            start.elapsed()
         });
     });
 }
 
 fn multi_thread_append<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str, n_threads: usize) {
     b.bench_function(name, |b| {
-        let (tx, _rx) = T::new_pair();
-
         b.iter_custom(|iters| {
+            let (tx, _rx) = T::new_pair(iters as usize * n_threads);
+
             let mut threads = Vec::with_capacity(n_threads);
             let barrier = Arc::new(Barrier::new(n_threads + 1));
 
@@ -244,9 +250,9 @@ fn multi_thread_append<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str, n_th
 
 fn multi_thread_read<T: Lx>(b: &mut BenchmarkGroup<WallTime>, name: &str, n_threads: usize) {
     b.bench_function(name, |b| {
-        let (tx, rx) = T::new_pair();
-
         b.iter_custom(|iters| {
+            let (tx, rx) = T::new_pair(iters as usize * n_threads);
+
             let mut threads = Vec::with_capacity(n_threads);
             let barrier = Arc::new(Barrier::new(n_threads + 1));
 
@@ -287,10 +293,15 @@ fn bench_single_thread_append(c: &mut Criterion) {
     b.throughput(Throughput::Elements(1));
 
     b.bench_function("vec", |b| {
-        let mut vec = Vec::new();
+        b.iter_custom(|iters| {
+            let mut vec = Vec::with_capacity(iters as usize);
+            let start = Instant::now();
 
-        b.iter(|| {
-            vec.push(black_box(1u64));
+            for _ in 0..iters {
+                vec.push(black_box(1u64));
+            }
+
+            start.elapsed()
         });
     });
 
@@ -302,22 +313,27 @@ fn bench_single_thread_append(c: &mut Criterion) {
     b.finish();
 }
 
-fn bench_single_thread_append_arc(c: &mut Criterion) {
-    let mut b = c.benchmark_group("single_thread_append_arc");
+fn bench_single_thread_append_box(c: &mut Criterion) {
+    let mut b = c.benchmark_group("single_thread_append_box");
     b.throughput(Throughput::Elements(1));
 
     b.bench_function("vec", |b| {
-        let mut vec = Vec::new();
+        b.iter_custom(|iters| {
+            let mut vec = Vec::with_capacity(iters as usize);
+            let start = Instant::now();
 
-        b.iter(|| {
-            vec.push(black_box(Arc::new(1u64)));
+            for _ in 0..iters {
+                vec.push(black_box(Box::new(1u64)));
+            }
+
+            start.elapsed()
         });
     });
 
-    single_thread_append::<Vec<Arc<u64>>>(&mut b, "rwlock_vec");
-    single_thread_append::<crossbeam_channel::Sender<Arc<u64>>>(&mut b, "crossbeam");
-    single_thread_append::<bus::Bus<Arc<u64>>>(&mut b, "bus");
-    single_thread_append::<Log<Arc<u64>>>(&mut b, "my_log");
+    single_thread_append::<Vec<Box<u64>>>(&mut b, "rwlock_vec");
+    single_thread_append::<crossbeam_channel::Sender<Box<u64>>>(&mut b, "crossbeam");
+    single_thread_append::<bus::Bus<Box<u64>>>(&mut b, "bus");
+    single_thread_append::<Log<Box<u64>>>(&mut b, "my_log");
 
     b.finish();
 }
@@ -369,7 +385,7 @@ fn bench_8_thread_read(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_single_thread_append,
-    bench_single_thread_append_arc,
+    bench_single_thread_append_box,
     bench_2_thread_append,
     bench_8_thread_append,
     bench_2_thread_read,

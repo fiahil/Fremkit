@@ -1,28 +1,44 @@
-use std::ptr::NonNull;
-use std::sync::Arc;
+use crate::sync::{AtomicUsize, Ordering};
 
-use crate::sync::{AtomicUsize, Ordering, RwLock};
+use std::cell::UnsafeCell;
+use std::num::NonZeroUsize;
 
-/// A Log stores an immutable sequence of items.
-/// It's a wrapper around a vector of `Arc<T>`, and it's thread-safe.
+/// A Log stores an immutable, append-only, sequence of items.
+/// It's a wrapper around a vector, and it's thread-safe.
 #[derive(Debug)]
 pub struct Log<T> {
-    data: RwLock<Vec<NonNull<T>>>,
+    capacity: NonZeroUsize,
+    data: Vec<UnsafeCell<Option<T>>>,
     len: AtomicUsize,
 }
 
 impl<T> Log<T> {
     /// Create a new empty Log.
-    pub fn new() -> Self {
+    pub fn new(capacity: usize) -> Self {
+        let mut data = Vec::with_capacity(capacity);
+
+        // Initialize the data.
+        for _ in 0..capacity {
+            data.push(UnsafeCell::new(None));
+        }
+
         Self {
-            data: RwLock::new(Vec::new()),
+            capacity: NonZeroUsize::new(capacity).expect("Cannot create a 0 capacity Log"),
             len: AtomicUsize::new(0),
+            // Specifying capacity here, means we are able to hold at least
+            // this many items without reallocating.
+            data,
         }
     }
 
     /// Get the current length of the log.
     pub fn len(&self) -> usize {
         self.len.load(Ordering::Relaxed)
+    }
+
+    /// Get the capacity of the log.
+    pub fn capacity(&self) -> usize {
+        self.capacity.get()
     }
 
     /// Is the Log empty ?
@@ -33,24 +49,32 @@ impl<T> Log<T> {
     /// Get an item from the Log.
     /// Returns `None` if the given index is out of bounds.
     pub fn get(&self, index: usize) -> Option<&T> {
-        let vec = self.data.read();
+        if index > self.capacity.get() - 1 {
+            return None;
+        }
 
-        vec.get(index).map(|ptr| unsafe { ptr.as_ref() })
+        let cell = &self.data[index];
+
+        unsafe { (*cell.get()).as_ref() }
     }
 
     /// Append an item to the Log.
     /// Returns the index of the appended item.
     pub fn push(&self, value: T) -> usize {
-        // Slow: allocate and move value
-        // let arc = Arc::from(value);
+        let token = self.len.fetch_add(1, Ordering::Relaxed);
 
-        let boxed = Box::new(value);
+        if token >= self.capacity.get() {
+            // todo: remove panic and replace by Result
+            panic!("Log capacity reached");
+        }
 
-        let mut vec = self.data.write();
+        let cell = &self.data[token];
 
-        vec.push(Box::leak(boxed).into());
+        unsafe {
+            cell.get().write(Some(value));
+        }
 
-        self.len.fetch_add(1, Ordering::Relaxed)
+        token
     }
 }
 
@@ -59,12 +83,14 @@ unsafe impl<T: Sync + Send> Sync for Log<T> {}
 
 impl<T> Default for Log<T> {
     fn default() -> Self {
-        Self::new()
+        Self::new(1000)
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use log::debug;
 
     use crate::sync::thread;
@@ -75,10 +101,27 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
+    #[test]
+    #[should_panic]
+    fn test_log_capacity() {
+        init();
+
+        let _log: Log<u32> = Log::new(0);
+    }
+
+    fn log_capacity_excess() {
+        init();
+
+        let log = Log::new(1);
+
+        log.push(0);
+        log.push(1);
+    }
+
     fn log_immutable_entries() {
         init();
 
-        let log = Log::new();
+        let log = Log::new(200);
 
         log.push(0);
         log.push(42);
@@ -95,7 +138,7 @@ mod test {
     fn basic_log() {
         init();
 
-        let log = Log::new();
+        let log = Log::new(3);
 
         log.push(1);
         log.push(2);
@@ -111,7 +154,7 @@ mod test {
     fn eventual_consistency() {
         init();
 
-        let vec = Arc::new(Log::new());
+        let vec = Arc::new(Log::new(2));
         let v1 = vec.clone();
         let v2 = vec.clone();
 
@@ -216,6 +259,12 @@ mod test {
         use super::*;
 
         #[test]
+        #[should_panic]
+        fn test_log_capacity_excess() {
+            log_capacity_excess()
+        }
+
+        #[test]
         fn test_log_immutable_entries() {
             log_immutable_entries()
         }
@@ -235,6 +284,12 @@ mod test {
         use super::*;
 
         use loom;
+
+        #[test]
+        #[should_panic]
+        fn test_log_capacity_excess() {
+            loom::model(log_capacity_excess);
+        }
 
         #[test]
         fn test_log_immutable_entries() {

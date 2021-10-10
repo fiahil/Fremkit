@@ -21,7 +21,7 @@ impl<T> Canal<T> {
 
         Canal {
             notifier,
-            log: Arc::new(Log::new()),
+            log: Arc::new(Log::new(10)),
         }
     }
 
@@ -37,13 +37,13 @@ impl<T> Canal<T> {
     /// Skip waiting if the canal already holds a droplet at the given index.
     ///
     /// * `index` - The index of the droplet we are waiting for.
-    pub fn wait_for(&self, index: usize) -> Option<&T> {
+    pub fn wait_for(&self, index: usize) -> &T {
         // if the current index is already in the log,
         // we skip waiting and return immediately
         self.notifier.wait_if(|| self.log.get(index).is_none());
 
         // we are now expected to find a droplet at the given index
-        self.log.get(index)
+        self.log.get(index).unwrap()
     }
 
     /// Get a droplet from the canal.
@@ -103,7 +103,7 @@ pub struct CanalBlockingIterator<'a, T> {
 }
 
 impl<'a, T> Iterator for CanalIterator<'a, T> {
-    type Item = Arc<T>;
+    type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         let idx = self.idx;
@@ -114,7 +114,7 @@ impl<'a, T> Iterator for CanalIterator<'a, T> {
 }
 
 impl<'a, T> Iterator for CanalBlockingIterator<'a, T> {
-    type Item = Arc<T>;
+    type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         let idx = self.idx;
