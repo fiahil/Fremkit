@@ -1,10 +1,11 @@
 use crate::sync::{AtomicUsize, Ordering};
+use crate::LogError;
 
 use std::cell::UnsafeCell;
 use std::num::NonZeroUsize;
 
 /// A Log stores an immutable, append-only, sequence of items.
-/// It's a wrapper around a vector, and it's thread-safe.
+/// It's a wrapper around a fixed-size vector, and it's thread-safe.
 #[derive(Debug)]
 pub struct Log<T> {
     capacity: NonZeroUsize,
@@ -15,6 +16,8 @@ pub struct Log<T> {
 impl<T> Log<T> {
     /// Create a new empty Log.
     pub fn new(capacity: usize) -> Self {
+        // Specifying capacity here, means we are able to hold at least
+        // this many items without reallocating.
         let mut data = Vec::with_capacity(capacity);
 
         // Initialize the data.
@@ -25,8 +28,6 @@ impl<T> Log<T> {
         Self {
             capacity: NonZeroUsize::new(capacity).expect("Cannot create a 0 capacity Log"),
             len: AtomicUsize::new(0),
-            // Specifying capacity here, means we are able to hold at least
-            // this many items without reallocating.
             data,
         }
     }
@@ -37,6 +38,7 @@ impl<T> Log<T> {
     }
 
     /// Get the capacity of the log.
+    #[allow(dead_code)]
     pub fn capacity(&self) -> usize {
         self.capacity.get()
     }
@@ -60,12 +62,11 @@ impl<T> Log<T> {
 
     /// Append an item to the Log.
     /// Returns the index of the appended item.
-    pub fn push(&self, value: T) -> usize {
+    pub fn push(&self, value: T) -> Result<usize, LogError> {
         let token = self.len.fetch_add(1, Ordering::Relaxed);
 
         if token >= self.capacity.get() {
-            // todo: remove panic and replace by Result
-            panic!("Log capacity reached");
+            return Err(LogError::LogCapacityExceeded);
         }
 
         let cell = &self.data[token];
@@ -74,7 +75,7 @@ impl<T> Log<T> {
             cell.get().write(Some(value));
         }
 
-        token
+        Ok(token)
     }
 }
 
@@ -114,8 +115,8 @@ mod test {
 
         let log = Log::new(1);
 
-        log.push(0);
-        log.push(1);
+        log.push(0).unwrap();
+        log.push(1).unwrap();
     }
 
     fn log_immutable_entries() {
@@ -123,13 +124,13 @@ mod test {
 
         let log = Log::new(200);
 
-        log.push(0);
-        log.push(42);
+        log.push(0).unwrap();
+        log.push(42).unwrap();
 
         assert_eq!(log.get(1).map(|s| *s), Some(42));
 
         for i in 0..100 {
-            log.push(i);
+            log.push(i).unwrap();
         }
 
         assert_eq!(log.get(1).map(|s| *s), Some(42));
@@ -140,9 +141,9 @@ mod test {
 
         let log = Log::new(3);
 
-        log.push(1);
-        log.push(2);
-        log.push(3);
+        log.push(1).unwrap();
+        log.push(2).unwrap();
+        log.push(3).unwrap();
 
         assert_eq!(log.get(0).map(|s| *s), Some(1));
         assert_eq!(log.get(1).map(|s| *s), Some(2));
@@ -159,7 +160,7 @@ mod test {
         let v2 = vec.clone();
 
         let h1 = thread::spawn(move || {
-            v1.push('a');
+            v1.push('a').unwrap();
 
             let x0 = v1.get(0);
             let x1 = v1.get(1);
@@ -168,7 +169,7 @@ mod test {
         });
 
         let h2 = thread::spawn(move || {
-            v2.push('b');
+            v2.push('b').unwrap();
 
             let x0 = v2.get(0);
             let x1 = v2.get(1);

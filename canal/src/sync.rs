@@ -1,7 +1,4 @@
-//! This module is for synchronisation primitives.
-
-mod notifier;
-pub(crate) use notifier::*;
+//! This module is for synchronisation primitives imports.
 
 #[cfg(not(loom))]
 pub(crate) use parking_lot::{Condvar, Mutex};
@@ -9,14 +6,14 @@ pub(crate) use parking_lot::{Condvar, Mutex};
 #[allow(unused_imports)]
 #[cfg(not(loom))]
 pub(crate) use std::{
-    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
     thread,
 };
 
 #[allow(unused_imports)]
 #[cfg(loom)]
 pub(crate) use loom::{
-    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
     sync::{Condvar, Mutex as OldMutex, MutexGuard as OldMutexGuard},
     thread,
 };

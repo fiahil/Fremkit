@@ -185,7 +185,7 @@ impl<T: Send + Sync + Debug + Default + 'static> Tx for Arc<Log<T>> {
     type Item = T;
 
     fn write(&mut self, msg: Self::Item) {
-        self.push(msg);
+        let _ = self.push(msg);
     }
 }
 

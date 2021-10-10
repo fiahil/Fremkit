@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::log::Log;
-use crate::sync::Notifier;
+use crate::notifier::Notifier;
 
 /// A Canal is an ordered collection of Droplets.
 /// Droplets are can be added to, or retrieved from, the Canal ; but
@@ -30,7 +30,7 @@ impl<T> Canal<T> {
         let idx = self.log.push(value);
         self.notifier.notify();
 
-        idx
+        idx.unwrap()
     }
 
     /// Wait for a new droplet to be added to the canal.
