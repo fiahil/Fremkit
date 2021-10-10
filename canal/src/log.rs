@@ -62,11 +62,11 @@ impl<T> Log<T> {
 
     /// Append an item to the Log.
     /// Returns the index of the appended item.
-    pub fn push(&self, value: T) -> Result<usize, LogError> {
+    pub fn push(&self, value: T) -> Result<usize, LogError<T>> {
         let token = self.len.fetch_add(1, Ordering::Relaxed);
 
         if token >= self.capacity.get() {
-            return Err(LogError::LogCapacityExceeded);
+            return Err(LogError::LogCapacityExceeded(value));
         }
 
         let cell = &self.data[token];
