@@ -67,7 +67,7 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    #[test]
+    // #[test]
     fn test_aqueduc() {
         init();
 
