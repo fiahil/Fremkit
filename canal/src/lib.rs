@@ -1,5 +1,6 @@
 mod canal;
 mod error;
+mod list;
 mod log;
 mod notifier;
 mod sync;

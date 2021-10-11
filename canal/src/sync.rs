@@ -6,14 +6,14 @@ pub(crate) use parking_lot::{Condvar, Mutex};
 #[allow(unused_imports)]
 #[cfg(not(loom))]
 pub(crate) use std::{
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
     thread,
 };
 
 #[allow(unused_imports)]
 #[cfg(loom)]
 pub(crate) use loom::{
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
     sync::{Condvar, Mutex as OldMutex, MutexGuard as OldMutexGuard},
     thread,
 };

@@ -9,7 +9,7 @@ lint:			## Run clippy
 
 loom:			## Run tests with loom
 	RUSTFLAGS="--cfg loom" \
-	LOOM_MAX_PREEMPTIONS=3 \
+	LOOM_MAX_PREEMPTIONS=2 \
 	cargo test --release -p canal
 
 test:			## Run tests

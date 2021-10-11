@@ -1,8 +1,6 @@
-use std::cell::UnsafeCell;
-use std::collections::LinkedList;
-use std::sync::atomic::AtomicPtr;
 use std::sync::Arc;
 
+use crate::list::List;
 use crate::log::Log;
 use crate::notifier::Notifier;
 use crate::sync::Mutex;
@@ -16,7 +14,7 @@ const DEFAULT_LOG_CAPACITY: usize = 1024;
 pub struct Canal<T> {
     log_capacity: usize,
     notifier: Notifier,
-    logs: Arc<UnsafeCell<LinkedList<Arc<Log<T>>>>>,
+    logs: Arc<List<Arc<Log<T>>>>,
     mutex: Arc<Mutex<bool>>,
 }
 
@@ -28,24 +26,19 @@ impl<T> Canal<T> {
 
     /// Create a new canal with the given log capacity.
     pub fn with_capacity(log_capacity: usize) -> Self {
-        let mut log = Arc::new(Log::new(log_capacity));
-        let mut list = LinkedList::new();
-
-        list.push_back(log);
+        let list = List::new(Arc::new(Log::new(log_capacity)));
 
         Canal {
             log_capacity,
             notifier: Notifier::new(),
-            logs: Arc::new(UnsafeCell::new(list)),
+            logs: Arc::new(list),
             mutex: Arc::new(Mutex::new(false)),
         }
     }
 
     /// Add a value to the canal, and notifies all listeners.
     pub fn push(&self, value: T) -> usize {
-        let deque = unsafe { &*self.logs.get() };
-
-        match deque.back().unwrap().push(value) {
+        match self.logs.tail().push(value) {
             Ok(idx) => {
                 self.notifier.notify();
                 idx
@@ -53,19 +46,17 @@ impl<T> Canal<T> {
             Err(LogError::LogCapacityExceeded(v)) => {
                 let _lock = self.mutex.lock();
 
-                let deque = unsafe { &mut *self.logs.get() };
-
                 // If someone else has already added a log, we just append to it.
-                match deque.back().unwrap().push(v) {
+                match self.logs.tail().push(v) {
                     Ok(idx) => {
                         self.notifier.notify();
                         idx
                     }
                     Err(LogError::LogCapacityExceeded(v)) => {
                         // Otherwise, we create a new log first.
-                        deque.push_back(Arc::new(Log::new(self.log_capacity)));
+                        self.logs.append(Arc::new(Log::new(self.log_capacity)));
 
-                        let idx = deque.back().unwrap().push(v).unwrap_or_else(|_| {
+                        let idx = self.logs.tail().push(v).unwrap_or_else(|_| {
                             panic!("Unreachable: new log cannot be already full")
                         });
 
@@ -93,22 +84,14 @@ impl<T> Canal<T> {
     /// Get a droplet from the canal.
     /// Return None if the index is out of bounds.
     pub fn get(&self, index: usize) -> Option<&T> {
-        let deque = unsafe { &*self.logs.get() };
-
-        deque.iter().enumerate().find_map(|(i, log)| {
-            if index / self.log_capacity == i {
-                log.get(index % self.log_capacity)
-            } else {
-                None
-            }
-        })
+        self.logs
+            .get(index / self.log_capacity)
+            .and_then(|log| log.get(index % self.log_capacity))
     }
 
     /// Get the length of the canal.
     pub fn len(&self) -> usize {
-        let deque = unsafe { &*self.logs.get() };
-
-        (deque.len() - 1) * self.log_capacity + deque.back().unwrap().len()
+        (self.logs.len() - 1) * self.log_capacity + self.logs.tail().len()
     }
 
     /// Is the canal empty?
@@ -222,7 +205,7 @@ mod test {
         }
 
         assert_eq!(c.len(), 21);
-        assert_eq!(unsafe { (&*c.logs.get()).len() }, 11);
+        assert_eq!(c.logs.len(), 11);
 
         for i in 0..21 {
             assert_eq!(c.get(i), Some(&i));
@@ -234,6 +217,7 @@ mod test {
     fn canal() {
         init();
 
+        // Barrier doesn't work with Loom
         let n = Notifier::new();
         let (a, b) = (n.clone(), n.clone());
 

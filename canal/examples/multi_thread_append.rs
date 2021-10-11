@@ -21,7 +21,7 @@ pub fn main() {
         let thread = thread::spawn(move || {
             b.wait();
 
-            for i in 0..1_000_000_000 {
+            for i in 0..1_000_000 {
                 info!("idx: {} | val: {}", tx.push(i), i);
             }
         });
