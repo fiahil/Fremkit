@@ -9,6 +9,3 @@ A simple way to connect tasks with each other
 - use zmq instead of pipes
 
 ## Next steps:
-
-- use an atomic linkedlist
-- try again with vecdeque ?
