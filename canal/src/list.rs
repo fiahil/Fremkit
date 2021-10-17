@@ -1,14 +1,19 @@
+//! This module contains the implementation of the `List` type.
+//! The `List` type is a thread-safe, simply-linked, append-only, list.
+
 use crate::sync::{AtomicPtr, Mutex, Ordering};
 
 use std::ptr;
 
 #[derive(Debug)]
+/// A block is a node in a linked list.
 struct Block<T> {
     next: AtomicPtr<Block<T>>,
     value: T,
 }
 
 #[derive(Debug)]
+/// A thread-safe linked list.
 pub struct List<T> {
     head: AtomicPtr<Block<T>>,
     tail: AtomicPtr<Block<T>>,
@@ -16,6 +21,7 @@ pub struct List<T> {
 }
 
 impl<T> List<T> {
+    /// Creates a new list with a given element as first.
     pub fn new(value: T) -> Self {
         let block = Box::new(Block {
             next: AtomicPtr::new(ptr::null_mut()),
@@ -31,15 +37,19 @@ impl<T> List<T> {
         }
     }
 
+    /// Return the length of the list
     pub fn len(&self) -> usize {
         *self.len.lock()
     }
 
     #[allow(dead_code)]
+    /// Is the list empty?
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Append an element to the back of the list.
+    /// This operation is O(1) and thread-safe.
     pub fn append(&self, value: T) {
         let block = Box::new(Block {
             next: AtomicPtr::new(ptr::null_mut()),
@@ -56,6 +66,9 @@ impl<T> List<T> {
         *lock += 1;
     }
 
+    /// Return a reference to an element at the given index.
+    /// Return None if the index is out of bounds.
+    /// This operation is O(n) and thread-safe.
     pub fn get(&self, index: usize) -> Option<&T> {
         let mut current = unsafe { self.head.load(Ordering::SeqCst).as_ref().unwrap() };
 
@@ -70,11 +83,13 @@ impl<T> List<T> {
         Some(&current.value)
     }
 
+    // Return a reference to the last element of the list.
     pub fn tail(&self) -> &T {
         unsafe { &self.tail.load(Ordering::Relaxed).as_ref().unwrap().value }
     }
 
     #[allow(dead_code)]
+    /// Create a new head -> tail list iterator
     pub fn iter(&self) -> ListIterator<T> {
         ListIterator { cursor: &self.head }
     }
@@ -87,6 +102,8 @@ impl<T> Drop for List<T> {
         loop {
             let next = unsafe { (&*current).next.load(Ordering::SeqCst) };
 
+            // taking ownership of the current block.
+            // will be deallocated at the end of the current iteration.
             unsafe { Box::from_raw(current) };
 
             if next.is_null() {
@@ -98,6 +115,7 @@ impl<T> Drop for List<T> {
     }
 }
 
+/// An iterator over a list.
 pub struct ListIterator<'a, T> {
     cursor: &'a AtomicPtr<Block<T>>,
 }

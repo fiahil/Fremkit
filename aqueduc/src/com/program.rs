@@ -21,7 +21,9 @@ pub enum Status {
 }
 
 impl Program {
-    pub fn execute(self, aq: Aqueduc) {
+    pub fn execute(self, aq: &Aqueduc) {
+        let aq = aq.clone();
+
         thread::spawn(move || {
             let mut process = process::Command::new(self.cmd)
                 .args(self.args)

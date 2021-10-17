@@ -6,8 +6,7 @@ use log::debug;
 
 use crate::com::{Action, Program, Status};
 
-/// An Aqueduc is a collection of Canals. It is the main entry point for
-/// creating Canals and spawning threads.
+/// An Aqueduc is a collection of Canals.
 #[derive(Debug, Clone)]
 pub struct Aqueduc {
     log: Canal<Action>,
@@ -67,7 +66,7 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    // #[test]
+    #[test]
     fn test_aqueduc() {
         init();
 
@@ -75,15 +74,15 @@ mod test {
 
         Command::Program(Program {
             cmd: "python3",
-            args: &["01-world.py"],
+            args: &["00-hello.py"],
         })
-        .execute(aq.clone());
+        .execute(&aq);
 
         Command::Program(Program {
             cmd: "python3",
-            args: &["00-hello.py"],
+            args: &["01-world.py"],
         })
-        .execute(aq.clone());
+        .execute(&aq);
 
         aq.log_blocking_aggregate(|state| {
             // return false once all programs are completed

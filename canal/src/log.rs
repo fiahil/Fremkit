@@ -4,7 +4,7 @@ use crate::LogError;
 use std::cell::UnsafeCell;
 use std::num::NonZeroUsize;
 
-/// A Log stores an immutable, append-only, sequence of items.
+/// A Log stores an immutable, append-only, bounded, sequence of items.
 /// It's a wrapper around a fixed-size vector, and it's thread-safe.
 #[derive(Debug)]
 pub struct Log<T> {

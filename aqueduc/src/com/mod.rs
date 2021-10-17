@@ -15,7 +15,7 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn execute(self, aq: Aqueduc) {
+    pub fn execute(self, aq: &Aqueduc) {
         match self {
             Command::Program(program) => program.execute(aq),
         }

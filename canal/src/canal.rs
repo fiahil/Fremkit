@@ -3,13 +3,14 @@ use std::sync::Arc;
 use crate::list::List;
 use crate::log::Log;
 use crate::notifier::Notifier;
-use crate::sync::Mutex;
+use crate::sync::{thread, Mutex};
 use crate::LogError;
 
 const DEFAULT_LOG_CAPACITY: usize = 1024;
 
-/// A Canal is a collection of logs.
-/// The same canal can serve as a sender and receiver.
+/// A Canal is an unbounded version of `Log`.
+/// The same canal can serve as a thread-safe sender and receiver.
+/// Appending to a canal can lead to a new Log being created.
 #[derive(Debug)]
 pub struct Canal<T> {
     log_capacity: usize,
@@ -38,20 +39,14 @@ impl<T> Canal<T> {
 
     /// Add a value to the canal, and notifies all listeners.
     pub fn push(&self, value: T) -> usize {
-        match self.logs.tail().push(value) {
-            Ok(idx) => {
-                self.notifier.notify();
-                idx
-            }
+        let idx = match self.logs.tail().push(value) {
+            Ok(idx) => idx,
             Err(LogError::LogCapacityExceeded(v)) => {
                 let _lock = self.mutex.lock();
 
                 // If someone else has already added a log, we just append to it.
                 match self.logs.tail().push(v) {
-                    Ok(idx) => {
-                        self.notifier.notify();
-                        idx
-                    }
+                    Ok(idx) => idx,
                     Err(LogError::LogCapacityExceeded(v)) => {
                         // Otherwise, we create a new log first.
                         self.logs.append(Arc::new(Log::new(self.log_capacity)));
@@ -60,12 +55,14 @@ impl<T> Canal<T> {
                             panic!("Unreachable: new log cannot be already full")
                         });
 
-                        self.notifier.notify();
                         idx
                     }
                 }
             }
-        }
+        };
+
+        self.notifier.notify();
+        idx
     }
 
     /// Wait for a value to be added to the canal at the given index.
@@ -74,8 +71,12 @@ impl<T> Canal<T> {
     /// * `index` - The index of the value we are waiting for.
     pub fn wait_for(&self, index: usize) -> &T {
         // if the current index is already in the log,
-        // we skip waiting and return immediately
-        self.notifier.wait_if(|| self.get(index).is_none());
+        // we skip waiting and return immediately.
+        // Otherwise we wait until we are sure the index is in the log.
+        // Note: While loop is to handle spurious wake-ups
+        while self.notifier.wait_if(|| self.get(index).is_none()) {
+            thread::yield_now();
+        }
 
         // we are now expected to find a value at the given index
         self.get(index).unwrap()
@@ -99,6 +100,8 @@ impl<T> Canal<T> {
         self.len() == 0
     }
 
+    /// Create a finite iterator over the canal.
+    /// When reaching the end of the canal, the iterator will stop.
     pub fn iter(&self) -> CanalIterator<T> {
         CanalIterator {
             idx: 0,
@@ -106,6 +109,8 @@ impl<T> Canal<T> {
         }
     }
 
+    /// Create an infinite, blocking iterator over the canal.
+    /// When reaching the end of the canal, the iterator will block until a new value is added.
     pub fn blocking_iter(&self) -> CanalBlockingIterator<T> {
         CanalBlockingIterator {
             idx: 0,
@@ -124,6 +129,7 @@ impl<T> Default for Canal<T> {
 }
 
 impl<T> Clone for Canal<T> {
+    /// Clone the canal.
     fn clone(&self) -> Self {
         Self {
             log_capacity: self.log_capacity,
