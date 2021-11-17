@@ -1,5 +1,5 @@
 [workspace]
 
 members = [
-    "fremkit_channel",
+    "fremkit-channel",
 ]

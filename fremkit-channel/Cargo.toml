@@ -1,5 +1,5 @@
 [package]
-name = "fremkit_channel"
+name = "fremkit-channel"
 version = "0.1.0"
 edition = "2021"
 authors = ["Quentin Leffray <fiahil@gmail.com>"]
@@ -25,5 +25,5 @@ env_logger = "0.9.0"
 bench = false
 
 [[bench]]
-name = "log"
+name = "channel"
 harness = false
