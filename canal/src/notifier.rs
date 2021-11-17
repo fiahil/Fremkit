@@ -13,7 +13,7 @@ pub struct Notifier {
 }
 
 impl Notifier {
-    /// Create a Notifier and return it with a copy
+    /// Create a Notifier.
     pub fn new() -> Self {
         Notifier {
             mutex: Arc::new(Mutex::new(false)),
