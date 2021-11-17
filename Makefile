@@ -10,18 +10,18 @@ lint:			## Run clippy
 loom:			## Run tests with loom
 	RUSTFLAGS="--cfg loom" \
 	LOOM_MAX_PREEMPTIONS=2 \
-	cargo test --release -p canal
+	cargo test --release -p paracompass
 
 test:			## Run tests
 	cargo test
 
 sanitizer:		## Run tests with sanitizer
 	RUSTFLAGS="-Zsanitizer=address" \
-	cargo +nightly test --target x86_64-apple-darwin -p canal
+	cargo +nightly test --target x86_64-apple-darwin -p paracompass
 	RUSTFLAGS="-Zsanitizer=leak" \
-	cargo +nightly test --target x86_64-apple-darwin -p canal
+	cargo +nightly test --target x86_64-apple-darwin -p paracompass
 	RUSTFLAGS="-Zsanitizer=thread" \
-	cargo +nightly test --target x86_64-apple-darwin -p canal
+	cargo +nightly test --target x86_64-apple-darwin -p paracompass
 
 bench:			## Run benchmarks
 	cargo bench

@@ -3,8 +3,8 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Instant;
 
-use canal::Canal;
-use canal::Log;
+use paracompass::Channel;
+use paracompass::Log;
 
 use bus;
 use criterion::measurement::WallTime;
@@ -199,15 +199,15 @@ impl<T: Send + Sync + Clone + Debug + Default + 'static> Rx for Arc<Log<T>> {
 }
 
 //
-// Canal
+// Channel
 //
-impl<T: Send + Sync + Clone + Debug + Default + 'static> Lx for Canal<T> {
+impl<T: Send + Sync + Clone + Debug + Default + 'static> Lx for Channel<T> {
     type Item = T;
     type Sender = Self;
     type Receiver = Self;
 
     fn new_pair(_size: usize) -> (Self::Sender, Self::Receiver) {
-        let l = Canal::new();
+        let l = Channel::new();
 
         (l.clone(), l)
     }
@@ -221,7 +221,7 @@ impl<T: Send + Sync + Clone + Debug + Default + 'static> Lx for Canal<T> {
     }
 }
 
-impl<T: Send + Sync + Debug + Default + 'static> Tx for Canal<T> {
+impl<T: Send + Sync + Debug + Default + 'static> Tx for Channel<T> {
     type Item = T;
 
     fn write(&mut self, msg: Self::Item) {
@@ -229,7 +229,7 @@ impl<T: Send + Sync + Debug + Default + 'static> Tx for Canal<T> {
     }
 }
 
-impl<T: Send + Sync + Clone + Debug + Default + 'static> Rx for Canal<T> {
+impl<T: Send + Sync + Clone + Debug + Default + 'static> Rx for Channel<T> {
     type Item = T;
 
     fn read(&mut self, index: usize) -> Option<Self::Item> {
@@ -349,7 +349,7 @@ fn bench_single_thread_append(c: &mut Criterion) {
     single_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam");
     single_thread_append::<bus::Bus<u64>>(&mut b, "bus");
     single_thread_append::<Log<u64>>(&mut b, "my_log");
-    single_thread_append::<Canal<u64>>(&mut b, "my_canal");
+    single_thread_append::<Channel<u64>>(&mut b, "my_channel");
 
     b.finish();
 }
@@ -375,7 +375,7 @@ fn bench_single_thread_append_box(c: &mut Criterion) {
     single_thread_append::<crossbeam_channel::Sender<Box<u64>>>(&mut b, "crossbeam");
     single_thread_append::<bus::Bus<Box<u64>>>(&mut b, "bus");
     single_thread_append::<Log<Box<u64>>>(&mut b, "my_log");
-    single_thread_append::<Canal<Box<u64>>>(&mut b, "my_canal");
+    single_thread_append::<Channel<Box<u64>>>(&mut b, "my_channel");
 
     b.finish();
 }
@@ -387,7 +387,7 @@ fn bench_2_thread_append(c: &mut Criterion) {
     multi_thread_append::<Vec<u64>>(&mut b, "rwlock_vec", 2);
     multi_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 2);
     multi_thread_append::<Log<u64>>(&mut b, "my_log", 2);
-    multi_thread_append::<Canal<u64>>(&mut b, "my_canal", 2);
+    multi_thread_append::<Channel<u64>>(&mut b, "my_channel", 2);
 
     b.finish();
 }
@@ -399,7 +399,7 @@ fn bench_8_thread_append(c: &mut Criterion) {
     multi_thread_append::<Vec<u64>>(&mut b, "rwlock_vec", 8);
     multi_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 8);
     multi_thread_append::<Log<u64>>(&mut b, "my_log", 8);
-    multi_thread_append::<Canal<u64>>(&mut b, "my_canal", 8);
+    multi_thread_append::<Channel<u64>>(&mut b, "my_channel", 8);
 
     b.finish();
 }
@@ -411,7 +411,7 @@ fn bench_2_thread_read(c: &mut Criterion) {
     multi_thread_read::<Vec<u64>>(&mut b, "rwlock_vec", 2);
     multi_thread_read::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 2);
     multi_thread_read::<Log<u64>>(&mut b, "my_log", 2);
-    multi_thread_read::<Canal<u64>>(&mut b, "my_canal", 2);
+    multi_thread_read::<Channel<u64>>(&mut b, "my_channel", 2);
 
     b.finish();
 }
@@ -423,7 +423,7 @@ fn bench_8_thread_read(c: &mut Criterion) {
     multi_thread_read::<Vec<u64>>(&mut b, "rwlock_vec", 8);
     multi_thread_read::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 8);
     multi_thread_read::<Log<u64>>(&mut b, "my_log", 8);
-    multi_thread_read::<Canal<u64>>(&mut b, "my_canal", 8);
+    multi_thread_read::<Channel<u64>>(&mut b, "my_channel", 8);
 
     b.finish();
 }

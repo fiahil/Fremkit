@@ -8,28 +8,28 @@ use crate::LogError;
 
 const DEFAULT_LOG_CAPACITY: usize = 1024;
 
-/// A Canal is an unbounded version of `Log`.
-/// The same canal can serve as a thread-safe sender and receiver.
-/// Appending to a canal can lead to a new Log being created.
+/// A Channel is an unbounded version of `Log`.
+/// The same channel can serve as a thread-safe sender and receiver.
+/// Appending to a channel can lead to a new Log being created.
 #[derive(Debug)]
-pub struct Canal<T> {
+pub struct Channel<T> {
     log_capacity: usize,
     notifier: Notifier,
     logs: Arc<List<Arc<Log<T>>>>,
     mutex: Arc<Mutex<bool>>,
 }
 
-impl<T> Canal<T> {
-    /// Create a new canal.
+impl<T> Channel<T> {
+    /// Create a new channel.
     pub fn new() -> Self {
         Self::with_capacity(DEFAULT_LOG_CAPACITY)
     }
 
-    /// Create a new canal with the given log capacity.
+    /// Create a new channel with the given log capacity.
     pub fn with_capacity(log_capacity: usize) -> Self {
         let list = List::new(Arc::new(Log::new(log_capacity)));
 
-        Canal {
+        Channel {
             log_capacity,
             notifier: Notifier::new(),
             logs: Arc::new(list),
@@ -37,7 +37,7 @@ impl<T> Canal<T> {
         }
     }
 
-    /// Add a value to the canal, and notifies all listeners.
+    /// Add a value to the channel, and notifies all listeners.
     pub fn push(&self, value: T) -> usize {
         let idx = match self.logs.tail().push(value) {
             Ok(idx) => idx,
@@ -65,8 +65,8 @@ impl<T> Canal<T> {
         idx
     }
 
-    /// Wait for a value to be added to the canal at the given index.
-    /// Skip waiting if the canal already holds anything at this index.
+    /// Wait for a value to be added to the channel at the given index.
+    /// Skip waiting if the channel already holds anything at this index.
     ///
     /// * `index` - The index of the value we are waiting for.
     pub fn wait_for(&self, index: usize) -> &T {
@@ -82,7 +82,7 @@ impl<T> Canal<T> {
         self.get(index).unwrap()
     }
 
-    /// Get a droplet from the canal.
+    /// Get a droplet from the channel.
     /// Return None if the index is out of bounds.
     pub fn get(&self, index: usize) -> Option<&T> {
         self.logs
@@ -90,46 +90,46 @@ impl<T> Canal<T> {
             .and_then(|log| log.get(index % self.log_capacity))
     }
 
-    /// Get the length of the canal.
+    /// Get the length of the channel.
     pub fn len(&self) -> usize {
         (self.logs.len() - 1) * self.log_capacity + self.logs.tail().len()
     }
 
-    /// Is the canal empty?
+    /// Is the channel empty?
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Create a finite iterator over the canal.
-    /// When reaching the end of the canal, the iterator will stop.
-    pub fn iter(&self) -> CanalIterator<T> {
-        CanalIterator {
+    /// Create a finite iterator over the channel.
+    /// When reaching the end of the channel, the iterator will stop.
+    pub fn iter(&self) -> ChannelIterator<T> {
+        ChannelIterator {
             idx: 0,
-            canal: self,
+            channel: self,
         }
     }
 
-    /// Create an infinite, blocking iterator over the canal.
-    /// When reaching the end of the canal, the iterator will block until a new value is added.
-    pub fn blocking_iter(&self) -> CanalBlockingIterator<T> {
-        CanalBlockingIterator {
+    /// Create an infinite, blocking iterator over the channel.
+    /// When reaching the end of the channel, the iterator will block until a new value is added.
+    pub fn blocking_iter(&self) -> ChannelBlockingIterator<T> {
+        ChannelBlockingIterator {
             idx: 0,
-            canal: self,
+            channel: self,
         }
     }
 }
 
-unsafe impl<T: Sync + Send> Send for Canal<T> {}
-unsafe impl<T: Sync + Send> Sync for Canal<T> {}
+unsafe impl<T: Sync + Send> Send for Channel<T> {}
+unsafe impl<T: Sync + Send> Sync for Channel<T> {}
 
-impl<T> Default for Canal<T> {
+impl<T> Default for Channel<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> Clone for Canal<T> {
-    /// Clone the canal.
+impl<T> Clone for Channel<T> {
+    /// Clone the channel.
     fn clone(&self) -> Self {
         Self {
             log_capacity: self.log_capacity,
@@ -140,35 +140,35 @@ impl<T> Clone for Canal<T> {
     }
 }
 
-pub struct CanalIterator<'a, T> {
+pub struct ChannelIterator<'a, T> {
     idx: usize,
-    canal: &'a Canal<T>,
+    channel: &'a Channel<T>,
 }
 
-pub struct CanalBlockingIterator<'a, T> {
+pub struct ChannelBlockingIterator<'a, T> {
     idx: usize,
-    canal: &'a Canal<T>,
+    channel: &'a Channel<T>,
 }
 
-impl<'a, T> Iterator for CanalIterator<'a, T> {
+impl<'a, T> Iterator for ChannelIterator<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         let idx = self.idx;
         self.idx += 1;
 
-        self.canal.get(idx)
+        self.channel.get(idx)
     }
 }
 
-impl<'a, T> Iterator for CanalBlockingIterator<'a, T> {
+impl<'a, T> Iterator for ChannelBlockingIterator<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         let idx = self.idx;
         self.idx += 1;
 
-        Some(self.canal.wait_for(idx))
+        Some(self.channel.wait_for(idx))
     }
 }
 
@@ -185,10 +185,10 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    fn canal_length() {
+    fn channel_length() {
         init();
 
-        let c: Canal<u32> = Canal::new();
+        let c: Channel<u32> = Channel::new();
 
         assert_eq!(c.len(), 0);
         assert!(c.is_empty());
@@ -199,10 +199,10 @@ mod test {
         assert!(!c.is_empty());
     }
 
-    fn canal_increase() {
+    fn channel_increase() {
         init();
 
-        let c = Canal::with_capacity(2);
+        let c = Channel::with_capacity(2);
 
         assert_eq!(c.len(), 0);
 
@@ -220,15 +220,15 @@ mod test {
         assert_eq!(c.get(22), None);
     }
 
-    fn canal() {
+    fn channel() {
         init();
 
         // Barrier doesn't work with Loom
         let n = Notifier::new();
         let (a, b) = (n.clone(), n.clone());
 
-        let canal = Canal::new();
-        let (c1, c2) = (canal.clone(), canal.clone());
+        let channel = Channel::new();
+        let (c1, c2) = (channel.clone(), channel.clone());
 
         let h1 = thread::spawn(move || {
             // starts threads simultaneously
@@ -264,18 +264,18 @@ mod test {
         use super::*;
 
         #[test]
-        fn test_canal_length() {
-            canal_length()
+        fn test_channel_length() {
+            channel_length()
         }
 
         #[test]
-        fn test_canal_increase() {
-            canal_increase()
+        fn test_channel_increase() {
+            channel_increase()
         }
 
         #[test]
-        fn test_canal() {
-            canal()
+        fn test_channel() {
+            channel()
         }
     }
     #[cfg(loom)]
@@ -286,18 +286,18 @@ mod test {
         use loom;
 
         #[test]
-        fn test_canal_length() {
-            loom::model(canal_length)
+        fn test_channel_length() {
+            loom::model(channel_length)
         }
 
         #[test]
-        fn test_canal_increase() {
-            loom::model(canal_increase)
+        fn test_channel_increase() {
+            loom::model(channel_increase)
         }
 
         #[test]
-        fn test_canal() {
-            loom::model(canal)
+        fn test_channel() {
+            loom::model(channel)
         }
     }
 }

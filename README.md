@@ -1,11 +1,8 @@
-# Aqueduc
-A simple way to connect tasks with each other
+# Fremkit
 
+A Fremkit is effectively a desert survival kit.
 
-## TODO:
+It contains the following:
 
-- improve the Arc in canal
-- use arrow
-- use zmq instead of pipes
+- Paracompass
 
-## Next steps:

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use canal::Canal;
+use paracompass::Channel;
 use log::{info, warn};
 
 const THREADS: usize = 64;
@@ -9,14 +9,14 @@ const THREADS: usize = 64;
 pub fn main() {
     env_logger::init();
 
-    let canal: Canal<u64> = Canal::new();
+    let channel: Channel<u64> = Channel::new();
 
     let mut threads = Vec::with_capacity(THREADS);
     let barrier = Arc::new(Barrier::new(THREADS + 1));
 
     for _ in 0..THREADS {
         let b = barrier.clone();
-        let tx = canal.clone();
+        let tx = channel.clone();
 
         let thread = thread::spawn(move || {
             b.wait();

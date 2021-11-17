@@ -1,5 +1,5 @@
 [package]
-name = "canal"
+name = "paracompass"
 version = "0.1.0"
 edition = "2021"
 authors = ["Quentin Leffray <fiahil@gmail.com>"]
@@ -13,7 +13,7 @@ parking_lot = "^0.11"
 thiserror = "^1.0"
 
 [target.'cfg(loom)'.dependencies]
-loom = { git = "https://github.com/fiahil/loom.git", branch = "logging_re", features = ["checkpoint"] }
+loom = { version = "0.5.2", features = ["checkpoint"] }
 
 [dev-dependencies]
 bus = "2.2.3"
