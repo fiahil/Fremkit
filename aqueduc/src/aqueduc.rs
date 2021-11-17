@@ -1,21 +1,27 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use bytes::Bytes;
 use canal::Canal;
 use log::debug;
+use zmq::Context;
 
 use crate::com::{Action, Program, Status};
 
 /// An Aqueduc is a collection of Canals.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Aqueduc {
+    zmq_ctx: Context,
     log: Canal<Action>,
     canal: Canal<Bytes>,
 }
 
 impl Aqueduc {
     pub fn new() -> Self {
+        let zmq_ctx = Context::new();
+
         Aqueduc {
+            zmq_ctx,
             log: Canal::new(),
             canal: Canal::new(),
         }
@@ -53,6 +59,15 @@ impl Aqueduc {
 impl Default for Aqueduc {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl fmt::Debug for Aqueduc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Aqueduc")
+            .field("log", &self.log)
+            .field("canal", &self.canal)
+            .finish()
     }
 }
 

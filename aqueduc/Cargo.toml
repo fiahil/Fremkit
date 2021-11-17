@@ -1,7 +1,7 @@
 [package]
 name = "aqueduc"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 authors = ["Quentin Leffray <fiahil@gmail.com>"]
 description = "A simple way to connect tasks with each other"
 
@@ -13,6 +13,7 @@ canal = { path = "../canal" }
 env_logger = "^0.9"
 log = "^0.4"
 thiserror = "^1.0"
+zmq = "^0.9"
 
 [lib]
 bench = false

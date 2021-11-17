@@ -1,7 +1,7 @@
 [package]
 name = "canal"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 authors = ["Quentin Leffray <fiahil@gmail.com>"]
 description = "A simple channel-like broadcast log"
 
