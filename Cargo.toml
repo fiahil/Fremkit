@@ -1,5 +1,5 @@
 [workspace]
 
 members = [
-    "paracompass",
+    "fremkit_channel",
 ]

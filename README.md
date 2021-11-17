@@ -4,5 +4,5 @@ A Fremkit is effectively a desert survival kit.
 
 It contains the following:
 
-- Paracompass
+- [fremkit_channel](./fremkit_channel/README.md)
 
