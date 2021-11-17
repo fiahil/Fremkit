@@ -13,7 +13,6 @@ canal = { path = "../canal" }
 env_logger = "^0.9"
 log = "^0.4"
 thiserror = "^1.0"
-zmq = "^0.9"
 
 [lib]
 bench = false

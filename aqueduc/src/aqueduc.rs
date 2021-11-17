@@ -4,24 +4,19 @@ use std::fmt;
 use bytes::Bytes;
 use canal::Canal;
 use log::debug;
-use zmq::Context;
 
 use crate::com::{Action, Program, Status};
 
 /// An Aqueduc is a collection of Canals.
 #[derive(Clone)]
 pub struct Aqueduc {
-    zmq_ctx: Context,
     log: Canal<Action>,
     canal: Canal<Bytes>,
 }
 
 impl Aqueduc {
     pub fn new() -> Self {
-        let zmq_ctx = Context::new();
-
         Aqueduc {
-            zmq_ctx,
             log: Canal::new(),
             canal: Canal::new(),
         }
