@@ -33,17 +33,19 @@ impl<T> Log<T> {
     }
 
     /// Get the current length of the log.
+    #[inline]
     pub fn len(&self) -> usize {
-        self.len.load(Ordering::Relaxed)
+        self.len.load(Ordering::Relaxed).min(self.capacity())
     }
 
     /// Get the capacity of the log.
-    #[allow(dead_code)]
+    #[inline]
     pub fn capacity(&self) -> usize {
         self.capacity.get()
     }
 
     /// Is the Log empty ?
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -83,6 +85,7 @@ unsafe impl<T: Sync + Send> Send for Log<T> {}
 unsafe impl<T: Sync + Send> Sync for Log<T> {}
 
 impl<T> Default for Log<T> {
+    /// Create a new empty Log with a default capacity of 1000.
     fn default() -> Self {
         Self::new(1000)
     }
@@ -117,6 +120,20 @@ mod test {
 
         log.push(0).unwrap();
         log.push(1).unwrap();
+    }
+
+    fn log_capacity_excess_len() {
+        init();
+
+        let log = Log::new(1);
+
+        log.push(0).unwrap();
+        log.push(1).unwrap_err();
+        log.push(2).unwrap_err();
+        log.push(3).unwrap_err();
+        log.push(4).unwrap_err();
+
+        assert_eq!(log.len(), 1);
     }
 
     fn log_immutable_entries() {
@@ -266,6 +283,11 @@ mod test {
         }
 
         #[test]
+        fn test_log_capacity_excess_len() {
+            log_capacity_excess_len()
+        }
+
+        #[test]
         fn test_log_immutable_entries() {
             log_immutable_entries()
         }
@@ -290,6 +312,11 @@ mod test {
         #[should_panic]
         fn test_log_capacity_excess() {
             loom::model(log_capacity_excess);
+        }
+
+        #[test]
+        fn test_log_capacity_excess_len() {
+            loom::model(log_capacity_excess_len);
         }
 
         #[test]

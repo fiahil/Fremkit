@@ -1,5 +1,11 @@
 [workspace]
-
+resolver = "2"
 members = [
     "fremkit-channel",
 ]
+
+[profile.release]
+lto = true
+
+[profile.bench]
+lto = true

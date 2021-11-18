@@ -16,7 +16,6 @@ thiserror = "^1.0"
 loom = { version = "0.5.2", features = ["checkpoint"] }
 
 [dev-dependencies]
-bus = "2.2.3"
 criterion = { version = "0.3.5", features = ["html_reports"] }
 crossbeam-channel = "0.5.1"
 env_logger = "0.9.0"
@@ -25,5 +24,9 @@ env_logger = "0.9.0"
 bench = false
 
 [[bench]]
-name = "channel"
+name = "bounded"
+harness = false
+
+[[bench]]
+name = "unbounded"
 harness = false
