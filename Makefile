@@ -26,13 +26,9 @@ sanitizer:		## Run tests with sanitizer
 	cargo +nightly test --target x86_64-apple-darwin -p ${CRATES}
 
 bench:			## Run benchmarks
+	@mv dist/benchmark target/criterion 2> /dev/null || true
 	cargo bench
-
-all-checks:			## Run all checks
-all-checks: lint bench
-
-all-tests:			## Run all tests
-all-tests: loom test sanitizer
+	mv target/criterion dist/benchmark
 
 all:			## Runn all tests and checks
-all: all-checks all-tests 
+all: lint loom test sanitizer bench

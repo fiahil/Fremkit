@@ -15,7 +15,7 @@ const DEFAULT_LOG_CAPACITY: usize = 1024;
 pub struct UnboundedChannel<T> {
     log_capacity: usize,
     notifier: Notifier,
-    logs: Arc<List<Arc<Channel<T>>>>,
+    logs: Arc<List<Channel<T>>>,
     mutex: Arc<Mutex<bool>>,
 }
 
@@ -27,7 +27,7 @@ impl<T> UnboundedChannel<T> {
 
     /// Create a new channel with the given log capacity.
     pub fn with_log_capacity(log_capacity: usize) -> Self {
-        let list = List::new(Arc::new(Channel::new(log_capacity)));
+        let list = List::new(Channel::new(log_capacity));
 
         UnboundedChannel {
             log_capacity,
@@ -49,7 +49,7 @@ impl<T> UnboundedChannel<T> {
                     Ok(idx) => idx,
                     Err(ChannelError::LogCapacityExceeded(v)) => {
                         // Otherwise, we create a new log first.
-                        self.logs.append(Arc::new(Channel::new(self.log_capacity)));
+                        self.logs.append(Channel::new(self.log_capacity));
 
                         let idx = self.logs.tail().push(v).unwrap_or_else(|_| {
                             panic!("Unreachable: new log cannot be already full")

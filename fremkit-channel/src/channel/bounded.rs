@@ -70,7 +70,7 @@ impl<T> Channel<T> {
     /// Append an item to the channel.
     /// Returns the index of the appended item.
     pub fn push(&self, value: T) -> Result<usize, ChannelError<T>> {
-        let token = self.len.fetch_add(1, Ordering::Relaxed);
+        let token = self.len.fetch_add(1, Ordering::AcqRel);
 
         if token >= self.capacity() {
             return Err(ChannelError::LogCapacityExceeded(value));

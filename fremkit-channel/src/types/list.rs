@@ -3,20 +3,67 @@
 
 use crate::sync::{AtomicPtr, Mutex, Ordering};
 
+use std::cell::UnsafeCell;
+use std::mem::MaybeUninit;
 use std::ptr;
 
-#[derive(Debug)]
 /// A block is a node in a linked list.
+#[derive(Debug)]
 struct Block<T> {
     next: AtomicPtr<Block<T>>,
     value: T,
 }
 
+const CACHE_SIZE: usize = 32;
+
+/// A cache for fast pointer lookups.
 #[derive(Debug)]
+struct Cache<T> {
+    store: UnsafeCell<[*mut T; CACHE_SIZE]>,
+}
+
+unsafe impl<T: Send + Sync> Send for Cache<T> {}
+unsafe impl<T: Send + Sync> Sync for Cache<T> {}
+
+impl<T> Cache<T> {
+    fn new(ptr: *mut T) -> Self {
+        let cache = Cache {
+            // Initialize the cache with null pointers.
+            // SAFETY: this is safe because the array only contains null pointers at first.
+            store: unsafe { MaybeUninit::zeroed().assume_init() },
+        };
+
+        cache.put(0, ptr);
+        cache
+    }
+
+    #[inline]
+    fn put(&self, index: usize, ptr: *mut T) {
+        if index >= CACHE_SIZE {
+            return;
+        }
+
+        unsafe {
+            (*self.store.get())[index] = ptr;
+        }
+    }
+
+    #[inline]
+    fn get(&self, index: usize) -> *mut T {
+        if index >= CACHE_SIZE {
+            return ptr::null_mut();
+        }
+
+        unsafe { (*self.store.get())[index] }
+    }
+}
+
 /// A thread-safe linked list.
+#[derive(Debug)]
 pub struct List<T> {
     head: AtomicPtr<Block<T>>,
     tail: AtomicPtr<Block<T>>,
+    cache: Cache<Block<T>>,
     len: Mutex<usize>,
 }
 
@@ -33,17 +80,20 @@ impl<T> List<T> {
         List {
             tail: AtomicPtr::new(ptr),
             head: AtomicPtr::new(ptr),
+            cache: Cache::new(ptr),
             len: Mutex::new(1),
         }
     }
 
     /// Return the length of the list
+    #[inline]
     pub fn len(&self) -> usize {
         *self.len.lock()
     }
 
-    #[allow(dead_code)]
     /// Is the list empty?
+    #[inline]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -51,19 +101,25 @@ impl<T> List<T> {
     /// Append an element to the back of the list.
     /// This operation is O(1) and thread-safe.
     pub fn append(&self, value: T) {
+        // Allocate the block
         let block = Box::new(Block {
             next: AtomicPtr::new(ptr::null_mut()),
             value,
         });
         let ptr: *mut Block<T> = Box::leak(block);
 
+        // Lock the list and update the pointers
         let mut lock = self.len.lock();
         let tail = unsafe { self.tail.load(Ordering::SeqCst).as_ref().unwrap() };
 
         tail.next.store(ptr, Ordering::SeqCst);
         self.tail.store(ptr, Ordering::SeqCst);
 
+        // Update the length
         *lock += 1;
+
+        // Update the cache
+        self.cache.put(*lock - 1, ptr);
     }
 
     /// Return a reference to an element at the given index.
@@ -72,7 +128,12 @@ impl<T> List<T> {
     pub fn get(&self, index: usize) -> Option<&T> {
         let mut current = unsafe { self.head.load(Ordering::SeqCst).as_ref().unwrap() };
 
-        // TODO: use cache to speed common operations (like tail get).
+        // Check the cache
+        let ptr = self.cache.get(index);
+        if !ptr.is_null() {
+            return unsafe { Some(&(*ptr).value) };
+        }
+
         for _ in 0..index {
             match unsafe { current.next.load(Ordering::SeqCst).as_ref() } {
                 None => return None,

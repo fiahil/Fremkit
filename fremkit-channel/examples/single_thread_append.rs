@@ -1,16 +1,17 @@
-use fremkit_channel::unbounded::UnboundedChannel;
-use log::info;
+use fremkit_channel::bounded::Channel;
 
-pub fn main() {
-    env_logger::init();
+const N: usize = 10_000;
 
-    let channel: UnboundedChannel<u64> = UnboundedChannel::with_log_capacity(10);
+pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let channel: Channel<u64> = Channel::new(N);
 
-    for i in 0..1_000 {
-        info!("idx: {}", channel.push(i));
+    for i in 0..N {
+        println!("idx: {}", channel.push(i as u64)?);
     }
 
-    for i in 0..1_000 {
-        info!("val: {:?}", channel.get(i));
+    for i in 0..N {
+        println!("val: {:?}", channel.get(i));
     }
+
+    Ok(())
 }
