@@ -1,10 +1,7 @@
 mod channel;
-mod error;
-mod list;
-mod log;
-mod notifier;
 mod sync;
+mod types;
 
-pub use crate::channel::Channel;
-pub use crate::error::LogError;
-pub use crate::log::Log;
+pub use crate::channel::bounded;
+pub use crate::channel::unbounded;
+pub use crate::types::ChannelError;

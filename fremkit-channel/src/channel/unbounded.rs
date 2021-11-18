@@ -1,35 +1,35 @@
 use std::sync::Arc;
 
-use crate::list::List;
-use crate::log::Log;
-use crate::notifier::Notifier;
+use super::bounded::Channel;
 use crate::sync::{thread, Mutex};
-use crate::LogError;
+use crate::types::List;
+use crate::types::Notifier;
+use crate::ChannelError;
 
 const DEFAULT_LOG_CAPACITY: usize = 1024;
 
-/// A Channel is an unbounded version of `Log`.
+/// UnboundedChannel version of `Channel`.
 /// The same channel can serve as a thread-safe sender and receiver.
 /// Appending to a channel can lead to a new Log being created.
 #[derive(Debug)]
-pub struct Channel<T> {
+pub struct UnboundedChannel<T> {
     log_capacity: usize,
     notifier: Notifier,
-    logs: Arc<List<Arc<Log<T>>>>,
+    logs: Arc<List<Arc<Channel<T>>>>,
     mutex: Arc<Mutex<bool>>,
 }
 
-impl<T> Channel<T> {
+impl<T> UnboundedChannel<T> {
     /// Create a new channel.
     pub fn new() -> Self {
-        Self::with_capacity(DEFAULT_LOG_CAPACITY)
+        Self::with_log_capacity(DEFAULT_LOG_CAPACITY)
     }
 
     /// Create a new channel with the given log capacity.
-    pub fn with_capacity(log_capacity: usize) -> Self {
-        let list = List::new(Arc::new(Log::new(log_capacity)));
+    pub fn with_log_capacity(log_capacity: usize) -> Self {
+        let list = List::new(Arc::new(Channel::new(log_capacity)));
 
-        Channel {
+        UnboundedChannel {
             log_capacity,
             notifier: Notifier::new(),
             logs: Arc::new(list),
@@ -41,15 +41,15 @@ impl<T> Channel<T> {
     pub fn push(&self, value: T) -> usize {
         let idx = match self.logs.tail().push(value) {
             Ok(idx) => idx,
-            Err(LogError::LogCapacityExceeded(v)) => {
+            Err(ChannelError::LogCapacityExceeded(v)) => {
                 let _lock = self.mutex.lock();
 
                 // If someone else has already added a log, we just append to it.
                 match self.logs.tail().push(v) {
                     Ok(idx) => idx,
-                    Err(LogError::LogCapacityExceeded(v)) => {
+                    Err(ChannelError::LogCapacityExceeded(v)) => {
                         // Otherwise, we create a new log first.
-                        self.logs.append(Arc::new(Log::new(self.log_capacity)));
+                        self.logs.append(Arc::new(Channel::new(self.log_capacity)));
 
                         let idx = self.logs.tail().push(v).unwrap_or_else(|_| {
                             panic!("Unreachable: new log cannot be already full")
@@ -119,16 +119,16 @@ impl<T> Channel<T> {
     }
 }
 
-unsafe impl<T: Sync + Send> Send for Channel<T> {}
-unsafe impl<T: Sync + Send> Sync for Channel<T> {}
+unsafe impl<T: Sync + Send> Send for UnboundedChannel<T> {}
+unsafe impl<T: Sync + Send> Sync for UnboundedChannel<T> {}
 
-impl<T> Default for Channel<T> {
+impl<T> Default for UnboundedChannel<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> Clone for Channel<T> {
+impl<T> Clone for UnboundedChannel<T> {
     /// Clone the channel.
     fn clone(&self) -> Self {
         Self {
@@ -142,12 +142,12 @@ impl<T> Clone for Channel<T> {
 
 pub struct ChannelIterator<'a, T> {
     idx: usize,
-    channel: &'a Channel<T>,
+    channel: &'a UnboundedChannel<T>,
 }
 
 pub struct ChannelBlockingIterator<'a, T> {
     idx: usize,
-    channel: &'a Channel<T>,
+    channel: &'a UnboundedChannel<T>,
 }
 
 impl<'a, T> Iterator for ChannelIterator<'a, T> {
@@ -188,7 +188,7 @@ mod test {
     fn channel_length() {
         init();
 
-        let c: Channel<u32> = Channel::new();
+        let c: UnboundedChannel<u32> = UnboundedChannel::new();
 
         assert_eq!(c.len(), 0);
         assert!(c.is_empty());
@@ -202,7 +202,7 @@ mod test {
     fn channel_increase() {
         init();
 
-        let c = Channel::with_capacity(2);
+        let c = UnboundedChannel::with_log_capacity(2);
 
         assert_eq!(c.len(), 0);
 
@@ -227,7 +227,7 @@ mod test {
         let n = Notifier::new();
         let (a, b) = (n.clone(), n.clone());
 
-        let channel = Channel::new();
+        let channel = UnboundedChannel::new();
         let (c1, c2) = (channel.clone(), channel.clone());
 
         let h1 = thread::spawn(move || {

@@ -100,7 +100,7 @@ impl<T> Drop for List<T> {
         let mut current = self.head.load(Ordering::SeqCst);
 
         loop {
-            let next = unsafe { (&*current).next.load(Ordering::SeqCst) };
+            let next = unsafe { (*current).next.load(Ordering::SeqCst) };
 
             // taking ownership of the current block.
             // will be deallocated at the end of the current iteration.
@@ -141,8 +141,8 @@ mod test {
 
     use super::*;
 
-    use crate::notifier::Notifier;
     use crate::sync::thread;
+    use crate::types::Notifier;
 
     use std::sync::Arc;
 

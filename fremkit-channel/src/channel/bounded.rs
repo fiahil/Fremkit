@@ -1,20 +1,25 @@
 use crate::sync::{AtomicUsize, Ordering};
-use crate::LogError;
+use crate::ChannelError;
 
 use std::cell::UnsafeCell;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
-/// A Log stores an immutable, append-only, bounded, sequence of items.
+/// This Channel stores an immutable, append-only, bounded, sequence of items.
 /// It's a wrapper around a fixed-size vector, and it's thread-safe.
+///
+/// All data sent on the Channel will become available in the same order as it was sent,
+/// and will always be available at the returned index. No push will ever block the
+/// calling thread. When the channel becomes full, pushes will fail and return an error.
 #[derive(Debug)]
-pub struct Log<T> {
+pub struct Channel<T> {
     capacity: NonZeroUsize,
     data: Vec<UnsafeCell<Option<T>>>,
     len: AtomicUsize,
 }
 
-impl<T> Log<T> {
-    /// Create a new empty Log.
+impl<T> Channel<T> {
+    /// Create a new empty Channel.
     pub fn new(capacity: usize) -> Self {
         // Specifying capacity here, means we are able to hold at least
         // this many items without reallocating.
@@ -26,34 +31,34 @@ impl<T> Log<T> {
         }
 
         Self {
-            capacity: NonZeroUsize::new(capacity).expect("Cannot create a 0 capacity Log"),
+            capacity: NonZeroUsize::new(capacity).expect("Cannot create a 0 capacity Channel"),
             len: AtomicUsize::new(0),
             data,
         }
     }
 
-    /// Get the current length of the log.
+    /// Get the current length of the channel.
     #[inline]
     pub fn len(&self) -> usize {
         self.len.load(Ordering::Relaxed).min(self.capacity())
     }
 
-    /// Get the capacity of the log.
+    /// Get the capacity of the channel.
     #[inline]
     pub fn capacity(&self) -> usize {
         self.capacity.get()
     }
 
-    /// Is the Log empty ?
+    /// Is the channel empty ?
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Get an item from the Log.
+    /// Get an item from the channel.
     /// Returns `None` if the given index is out of bounds.
     pub fn get(&self, index: usize) -> Option<&T> {
-        if index > self.capacity.get() - 1 {
+        if index > self.capacity() - 1 {
             return None;
         }
 
@@ -62,13 +67,13 @@ impl<T> Log<T> {
         unsafe { (*cell.get()).as_ref() }
     }
 
-    /// Append an item to the Log.
+    /// Append an item to the channel.
     /// Returns the index of the appended item.
-    pub fn push(&self, value: T) -> Result<usize, LogError<T>> {
+    pub fn push(&self, value: T) -> Result<usize, ChannelError<T>> {
         let token = self.len.fetch_add(1, Ordering::Relaxed);
 
-        if token >= self.capacity.get() {
-            return Err(LogError::LogCapacityExceeded(value));
+        if token >= self.capacity() {
+            return Err(ChannelError::LogCapacityExceeded(value));
         }
 
         let cell = &self.data[token];
@@ -81,13 +86,71 @@ impl<T> Log<T> {
     }
 }
 
-unsafe impl<T: Sync + Send> Send for Log<T> {}
-unsafe impl<T: Sync + Send> Sync for Log<T> {}
+unsafe impl<T: Sync + Send> Send for Channel<T> {}
+unsafe impl<T: Sync + Send> Sync for Channel<T> {}
 
-impl<T> Default for Log<T> {
-    /// Create a new empty Log with a default capacity of 1000.
-    fn default() -> Self {
-        Self::new(1000)
+//
+// Public API similar to std::sync::mpsc::channel for easier consumption.
+//
+
+impl<T> Channel<T> {
+    /// Convert the Channel into a Sender.
+    pub fn into_sender(self: Arc<Self>) -> Sender<T> {
+        Sender { channel: self }
+    }
+
+    /// Convert the Channel into a Reader.
+    pub fn into_reader(self: Arc<Self>) -> Reader<T> {
+        Reader { channel: self }
+    }
+}
+
+/// Open a new channel with a given capacity.
+/// Returns a Sender and a Reader.
+pub fn channel<T>(capacity: usize) -> (Sender<T>, Reader<T>) {
+    let channel = Arc::new(Channel::new(capacity));
+
+    (
+        Sender {
+            channel: channel.clone(),
+        },
+        Reader { channel },
+    )
+}
+
+/// Sender half of a Channel.
+#[derive(Debug, Clone)]
+pub struct Sender<T> {
+    channel: Arc<Channel<T>>,
+}
+
+impl<T> Sender<T> {
+    /// Send an item to the Channel.
+    pub fn send(&self, value: T) -> Result<usize, ChannelError<T>> {
+        self.channel.push(value)
+    }
+
+    /// Convert the sender into its inner Channel.
+    pub fn into_inner(self) -> Arc<Channel<T>> {
+        self.channel
+    }
+}
+
+/// Reader half of a Channel.
+#[derive(Debug, Clone)]
+pub struct Reader<T> {
+    channel: Arc<Channel<T>>,
+}
+
+impl<T> Reader<T> {
+    /// Read an item from the Channel at a given index.
+    pub fn read(&self, index: usize) -> Option<&T> {
+        self.channel.get(index)
+    }
+
+    /// Convert the Reader into its inner Channel.
+    pub fn into_inner(self) -> Arc<Channel<T>> {
+        self.channel
     }
 }
 
@@ -110,13 +173,13 @@ mod test {
     fn test_log_capacity() {
         init();
 
-        let _log: Log<u32> = Log::new(0);
+        let _log: Channel<u32> = Channel::new(0);
     }
 
     fn log_capacity_excess() {
         init();
 
-        let log = Log::new(1);
+        let log = Channel::new(1);
 
         log.push(0).unwrap();
         log.push(1).unwrap();
@@ -125,7 +188,7 @@ mod test {
     fn log_capacity_excess_len() {
         init();
 
-        let log = Log::new(1);
+        let log = Channel::new(1);
 
         log.push(0).unwrap();
         log.push(1).unwrap_err();
@@ -139,7 +202,7 @@ mod test {
     fn log_immutable_entries() {
         init();
 
-        let log = Log::new(200);
+        let log = Channel::new(200);
 
         log.push(0).unwrap();
         log.push(42).unwrap();
@@ -156,7 +219,7 @@ mod test {
     fn basic_log() {
         init();
 
-        let log = Log::new(3);
+        let log = Channel::new(3);
 
         log.push(1).unwrap();
         log.push(2).unwrap();
@@ -172,7 +235,7 @@ mod test {
     fn eventual_consistency() {
         init();
 
-        let vec = Arc::new(Log::new(2));
+        let vec = Arc::new(Channel::new(2));
         let v1 = vec.clone();
         let v2 = vec.clone();
 
