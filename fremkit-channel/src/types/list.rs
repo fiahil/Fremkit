@@ -198,6 +198,7 @@ impl<'a, T> Iterator for ListIterator<'a, T> {
 #[cfg(test)]
 mod test {
 
+    use fremkit_macro::with_loom;
     use log::debug;
 
     use super::*;
@@ -211,7 +212,9 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    fn list_basics() {
+    #[test]
+    #[with_loom]
+    fn test_list_basics() {
         init();
 
         let list = List::new(0);
@@ -230,7 +233,9 @@ mod test {
         assert_eq!(list.get(100), None);
     }
 
-    fn list_iter() {
+    #[test]
+    #[with_loom]
+    fn test_list_iter() {
         init();
 
         let list = List::new(0);
@@ -245,7 +250,9 @@ mod test {
         }
     }
 
-    fn list_multi_thread_append() {
+    #[test]
+    #[with_loom]
+    fn test_list_multi_thread_append() {
         init();
 
         // Barrier doesn't work with Loom
@@ -292,46 +299,5 @@ mod test {
         vec.sort();
 
         assert_eq!(vec, (-1..100).into_iter().collect::<Vec<_>>());
-    }
-
-    #[cfg(not(loom))]
-    mod test {
-        use super::*;
-
-        #[test]
-        fn test_list_basics() {
-            list_basics()
-        }
-
-        #[test]
-        fn test_list_iter() {
-            list_iter()
-        }
-
-        #[test]
-        fn test_list_multi_thread_append() {
-            list_multi_thread_append()
-        }
-    }
-    #[cfg(loom)]
-    mod test {
-        use super::*;
-
-        use loom;
-
-        #[test]
-        fn test_list_basics() {
-            loom::model(list_basics)
-        }
-
-        #[test]
-        fn test_list_iter() {
-            loom::model(list_iter)
-        }
-
-        #[test]
-        fn test_list_multi_thread_append() {
-            loom::model(list_multi_thread_append)
-        }
     }
 }

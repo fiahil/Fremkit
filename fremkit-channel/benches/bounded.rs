@@ -3,7 +3,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Instant;
 
-use fremkit_channel::bounded::Channel;
+use fremkit_channel::bounded::Log;
 
 use criterion::measurement::WallTime;
 use criterion::{
@@ -95,14 +95,14 @@ impl<T: Item> Rx for crossbeam_channel::Receiver<T> {
 }
 
 //
-// Channel
+// Log
 //
-impl<T: Item> Tx for Arc<Channel<T>> {
+impl<T: Item> Tx for Arc<Log<T>> {
     type Item = T;
-    type Receiver = Arc<Channel<T>>;
+    type Receiver = Arc<Log<T>>;
 
     fn open(capacity: usize) -> (Self, Self::Receiver) {
-        let l = Arc::new(Channel::new(capacity));
+        let l = Arc::new(Log::new(capacity));
 
         (l.clone(), l)
     }
@@ -112,9 +112,9 @@ impl<T: Item> Tx for Arc<Channel<T>> {
     }
 }
 
-impl<T: Item> Rx for Arc<Channel<T>> {
+impl<T: Item> Rx for Arc<Log<T>> {
     type Item = T;
-    type Sender = Arc<Channel<T>>;
+    type Sender = Arc<Log<T>>;
 
     fn read(&mut self, index: usize) -> Option<Self::Item> {
         self.get(index).copied()
@@ -239,7 +239,7 @@ fn bench_single_thread_append(c: &mut Criterion) {
 
     single_thread_append::<Arc<RwLock<Vec<u64>>>>(&mut b, "rwlock_vec");
     single_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam");
-    single_thread_append::<Arc<Channel<u64>>>(&mut b, "my_channel");
+    single_thread_append::<Arc<Log<u64>>>(&mut b, "my_channel");
 
     b.finish();
 }
@@ -250,7 +250,7 @@ fn bench_2_thread_append(c: &mut Criterion) {
 
     multi_thread_append::<Arc<RwLock<Vec<u64>>>>(&mut b, "rwlock_vec", 2);
     multi_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 2);
-    multi_thread_append::<Arc<Channel<u64>>>(&mut b, "my_channel", 2);
+    multi_thread_append::<Arc<Log<u64>>>(&mut b, "my_channel", 2);
 
     b.finish();
 }
@@ -261,7 +261,7 @@ fn bench_8_thread_append(c: &mut Criterion) {
 
     multi_thread_append::<Arc<RwLock<Vec<u64>>>>(&mut b, "rwlock_vec", 8);
     multi_thread_append::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 8);
-    multi_thread_append::<Arc<Channel<u64>>>(&mut b, "my_channel", 8);
+    multi_thread_append::<Arc<Log<u64>>>(&mut b, "my_channel", 8);
 
     b.finish();
 }
@@ -272,7 +272,7 @@ fn bench_2_thread_read(c: &mut Criterion) {
 
     multi_thread_read::<Arc<RwLock<Vec<u64>>>>(&mut b, "rwlock_vec", 2);
     multi_thread_read::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 2);
-    multi_thread_read::<Arc<Channel<u64>>>(&mut b, "my_channel", 2);
+    multi_thread_read::<Arc<Log<u64>>>(&mut b, "my_channel", 2);
 
     b.finish();
 }
@@ -283,7 +283,7 @@ fn bench_8_thread_read(c: &mut Criterion) {
 
     multi_thread_read::<Arc<RwLock<Vec<u64>>>>(&mut b, "rwlock_vec", 8);
     multi_thread_read::<crossbeam_channel::Sender<u64>>(&mut b, "crossbeam", 8);
-    multi_thread_read::<Arc<Channel<u64>>>(&mut b, "my_channel", 8);
+    multi_thread_read::<Arc<Log<u64>>>(&mut b, "my_channel", 8);
 
     b.finish();
 }

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use fremkit_channel::unbounded::UnboundedChannel;
+use fremkit_channel::unbounded::Channel;
 use log::{info, warn};
 
 const THREADS: usize = 64;
@@ -9,7 +9,7 @@ const THREADS: usize = 64;
 pub fn main() {
     env_logger::init();
 
-    let channel: UnboundedChannel<u64> = UnboundedChannel::new();
+    let channel: Channel<u64> = Channel::new();
 
     let mut threads = Vec::with_capacity(THREADS);
     let barrier = Arc::new(Barrier::new(THREADS + 1));

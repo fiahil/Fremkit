@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::bounded::Channel;
+use super::bounded::Log;
 use crate::sync::{thread, Mutex};
 use crate::types::List;
 use crate::types::Notifier;
@@ -8,18 +8,18 @@ use crate::ChannelError;
 
 const DEFAULT_LOG_CAPACITY: usize = 1024;
 
-/// UnboundedChannel version of `Channel`.
+/// Unbounded version of `Log`.
 /// The same channel can serve as a thread-safe sender and receiver.
 /// Appending to a channel can lead to a new Log being created.
 #[derive(Debug)]
-pub struct UnboundedChannel<T> {
+pub struct Channel<T> {
     log_capacity: usize,
     notifier: Notifier,
-    logs: Arc<List<Channel<T>>>,
+    logs: Arc<List<Log<T>>>,
     mutex: Arc<Mutex<bool>>,
 }
 
-impl<T> UnboundedChannel<T> {
+impl<T> Channel<T> {
     /// Create a new channel.
     pub fn new() -> Self {
         Self::with_log_capacity(DEFAULT_LOG_CAPACITY)
@@ -27,9 +27,9 @@ impl<T> UnboundedChannel<T> {
 
     /// Create a new channel with the given log capacity.
     pub fn with_log_capacity(log_capacity: usize) -> Self {
-        let list = List::new(Channel::new(log_capacity));
+        let list = List::new(Log::new(log_capacity));
 
-        UnboundedChannel {
+        Channel {
             log_capacity,
             notifier: Notifier::new(),
             logs: Arc::new(list),
@@ -49,7 +49,7 @@ impl<T> UnboundedChannel<T> {
                     Ok(idx) => idx,
                     Err(ChannelError::LogCapacityExceeded(v)) => {
                         // Otherwise, we create a new log first.
-                        self.logs.append(Channel::new(self.log_capacity));
+                        self.logs.append(Log::new(self.log_capacity));
 
                         let idx = self.logs.tail().push(v).unwrap_or_else(|_| {
                             panic!("Unreachable: new log cannot be already full")
@@ -119,16 +119,16 @@ impl<T> UnboundedChannel<T> {
     }
 }
 
-unsafe impl<T: Sync + Send> Send for UnboundedChannel<T> {}
-unsafe impl<T: Sync + Send> Sync for UnboundedChannel<T> {}
+unsafe impl<T: Sync + Send> Send for Channel<T> {}
+unsafe impl<T: Sync + Send> Sync for Channel<T> {}
 
-impl<T> Default for UnboundedChannel<T> {
+impl<T> Default for Channel<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> Clone for UnboundedChannel<T> {
+impl<T> Clone for Channel<T> {
     /// Clone the channel.
     fn clone(&self) -> Self {
         Self {
@@ -142,12 +142,12 @@ impl<T> Clone for UnboundedChannel<T> {
 
 pub struct ChannelIterator<'a, T> {
     idx: usize,
-    channel: &'a UnboundedChannel<T>,
+    channel: &'a Channel<T>,
 }
 
 pub struct ChannelBlockingIterator<'a, T> {
     idx: usize,
-    channel: &'a UnboundedChannel<T>,
+    channel: &'a Channel<T>,
 }
 
 impl<'a, T> Iterator for ChannelIterator<'a, T> {
@@ -172,9 +172,75 @@ impl<'a, T> Iterator for ChannelBlockingIterator<'a, T> {
     }
 }
 
+//
+// Public API similar to std::sync::mpsc::channel for easier consumption.
+//
+
+impl<T> Channel<T> {
+    /// Convert the Channel into a Sender.
+    pub fn into_sender(self) -> Sender<T> {
+        Sender { channel: self }
+    }
+
+    /// Convert the Channel into a Reader.
+    pub fn into_reader(self) -> Reader<T> {
+        Reader { channel: self }
+    }
+}
+
+/// Open a new channel with a given capacity.
+/// Returns a Sender and a Reader.
+pub fn open<T>() -> (Sender<T>, Reader<T>) {
+    let channel = Channel::new();
+
+    (
+        Sender {
+            channel: channel.clone(),
+        },
+        Reader { channel },
+    )
+}
+
+/// Sender half of a Log.
+#[derive(Debug, Clone)]
+pub struct Sender<T> {
+    channel: Channel<T>,
+}
+
+impl<T> Sender<T> {
+    /// Send an item to the Log.
+    pub fn send(&self, value: T) -> usize {
+        self.channel.push(value)
+    }
+
+    /// Convert the sender into its inner Log.
+    pub fn into_inner(self) -> Channel<T> {
+        self.channel
+    }
+}
+
+/// Reader half of a Log.
+#[derive(Debug, Clone)]
+pub struct Reader<T> {
+    channel: Channel<T>,
+}
+
+impl<T> Reader<T> {
+    /// Read an item from the Log at a given index.
+    pub fn read(&self, index: usize) -> Option<&T> {
+        self.channel.get(index)
+    }
+
+    /// Convert the Reader into its inner Log.
+    pub fn into_inner(self) -> Channel<T> {
+        self.channel
+    }
+}
+
 #[cfg(test)]
 mod test {
 
+    use fremkit_macro::with_loom;
     use log::debug;
 
     use crate::sync::thread;
@@ -185,10 +251,12 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    fn channel_length() {
+    #[test]
+    #[with_loom]
+    fn test_channel_length() {
         init();
 
-        let c: UnboundedChannel<u32> = UnboundedChannel::new();
+        let c: Channel<u32> = Channel::new();
 
         assert_eq!(c.len(), 0);
         assert!(c.is_empty());
@@ -199,10 +267,12 @@ mod test {
         assert!(!c.is_empty());
     }
 
-    fn channel_increase() {
+    #[test]
+    #[with_loom]
+    fn test_channel_increase() {
         init();
 
-        let c = UnboundedChannel::with_log_capacity(2);
+        let c = Channel::with_log_capacity(2);
 
         assert_eq!(c.len(), 0);
 
@@ -220,14 +290,16 @@ mod test {
         assert_eq!(c.get(22), None);
     }
 
-    fn channel() {
+    #[test]
+    #[with_loom]
+    fn test_channel() {
         init();
 
         // Barrier doesn't work with Loom
         let n = Notifier::new();
         let (a, b) = (n.clone(), n.clone());
 
-        let channel = UnboundedChannel::new();
+        let channel = Channel::new();
         let (c1, c2) = (channel.clone(), channel.clone());
 
         let h1 = thread::spawn(move || {
@@ -257,47 +329,5 @@ mod test {
 
         assert!(h1.join().is_ok());
         assert!(h2.join().is_ok());
-    }
-
-    #[cfg(not(loom))]
-    mod test {
-        use super::*;
-
-        #[test]
-        fn test_channel_length() {
-            channel_length()
-        }
-
-        #[test]
-        fn test_channel_increase() {
-            channel_increase()
-        }
-
-        #[test]
-        fn test_channel() {
-            channel()
-        }
-    }
-    #[cfg(loom)]
-    mod test {
-
-        use super::*;
-
-        use loom;
-
-        #[test]
-        fn test_channel_length() {
-            loom::model(channel_length)
-        }
-
-        #[test]
-        fn test_channel_increase() {
-            loom::model(channel_increase)
-        }
-
-        #[test]
-        fn test_channel() {
-            loom::model(channel)
-        }
     }
 }

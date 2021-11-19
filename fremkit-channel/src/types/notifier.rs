@@ -95,17 +95,23 @@ impl Notifier {
 
 #[cfg(test)]
 mod test {
+    use fremkit_macro::with_loom;
+
     use super::*;
 
     use crate::sync::thread;
 
-    fn can_notify() {
+    #[test]
+    #[with_loom]
+    fn test_can_notify() {
         let notifier = Notifier::new();
 
         notifier.notify();
     }
 
-    fn notifier() {
+    #[test]
+    #[with_loom]
+    fn test_notifier() {
         let n = Notifier::new();
         let nx = n.clone();
 
@@ -122,7 +128,9 @@ mod test {
         assert!(h.join().is_ok());
     }
 
-    fn broadcast() {
+    #[test]
+    #[with_loom]
+    fn test_broadcast() {
         let n = Notifier::new();
         let (a, b) = (n.clone(), n.clone());
 
@@ -143,7 +151,9 @@ mod test {
         assert!(h2.join().is_ok());
     }
 
-    fn notify_if() {
+    #[test]
+    #[with_loom]
+    fn test_notify_if() {
         let n = Notifier::new();
         let (a, b) = (n.clone(), n.clone());
 
@@ -160,56 +170,5 @@ mod test {
 
         assert!(h1.join().is_ok());
         assert!(h2.join().is_ok());
-    }
-
-    #[cfg(not(loom))]
-    mod test {
-        use super::*;
-
-        #[test]
-        fn test_can_notify() {
-            can_notify()
-        }
-
-        #[test]
-        fn test_notifier() {
-            notifier()
-        }
-
-        #[test]
-        fn test_broadcast() {
-            broadcast()
-        }
-
-        #[test]
-        fn test_notify_if() {
-            notify_if()
-        }
-    }
-
-    #[cfg(loom)]
-    mod test {
-        use super::*;
-        use loom;
-
-        #[test]
-        fn test_can_notify() {
-            loom::model(can_notify)
-        }
-
-        #[test]
-        fn test_notifier() {
-            loom::model(notifier)
-        }
-
-        #[test]
-        fn test_broadcast() {
-            loom::model(broadcast)
-        }
-
-        #[test]
-        fn test_notify_if() {
-            loom::model(notify_if)
-        }
     }
 }

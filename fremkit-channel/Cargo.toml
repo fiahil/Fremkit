@@ -19,6 +19,7 @@ loom = { version = "0.5.2", features = ["checkpoint"] }
 criterion = { version = "0.3.5", features = ["html_reports"] }
 crossbeam-channel = "0.5.1"
 env_logger = "0.9.0"
+fremkit-macro = { path = "../fremkit-macro" }
 
 [lib]
 bench = false
