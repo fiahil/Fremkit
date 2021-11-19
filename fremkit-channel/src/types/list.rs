@@ -1,7 +1,7 @@
 //! This module contains the implementation of the `List` type.
 //! The `List` type is a thread-safe, simply-linked, append-only, list.
 
-use crate::sync::{AtomicPtr, Mutex, Ordering};
+use crate::sync::{AtomicPtr, AtomicUsize, Mutex, Ordering};
 
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
@@ -19,7 +19,8 @@ const CACHE_SIZE: usize = 32;
 /// A cache for fast pointer lookups.
 #[derive(Debug)]
 struct Cache<T> {
-    store: UnsafeCell<[*mut T; CACHE_SIZE]>,
+    store: UnsafeCell<[(usize, *mut T); CACHE_SIZE]>,
+    cur: AtomicUsize,
 }
 
 unsafe impl<T: Send + Sync> Send for Cache<T> {}
@@ -31,30 +32,35 @@ impl<T> Cache<T> {
             // Initialize the cache with null pointers.
             // SAFETY: this is safe because the array only contains null pointers at first.
             store: unsafe { MaybeUninit::zeroed().assume_init() },
+            cur: AtomicUsize::new(0),
         };
 
         cache.put(0, ptr);
         cache
     }
 
+    /// Store a pointer in the cache.
     #[inline]
-    fn put(&self, index: usize, ptr: *mut T) {
-        if index >= CACHE_SIZE {
-            return;
-        }
+    fn put(&self, key: usize, ptr: *mut T) {
+        let cur = self.cur.fetch_add(1, Ordering::Relaxed);
 
         unsafe {
-            (*self.store.get())[index] = ptr;
+            (*self.store.get())[cur % CACHE_SIZE] = (key, ptr);
         }
     }
 
+    // Get a pointer from the cache.
     #[inline]
-    fn get(&self, index: usize) -> *mut T {
-        if index >= CACHE_SIZE {
-            return ptr::null_mut();
+    fn get(&self, key: usize) -> *mut T {
+        for i in 0..CACHE_SIZE {
+            let (k, v) = unsafe { (*self.store.get())[i] };
+
+            if k == key {
+                return v;
+            }
         }
 
-        unsafe { (*self.store.get())[index] }
+        ptr::null_mut()
     }
 }
 
@@ -117,16 +123,13 @@ impl<T> List<T> {
 
         // Update the length
         *lock += 1;
-
-        // Update the cache
-        self.cache.put(*lock - 1, ptr);
     }
 
     /// Return a reference to an element at the given index.
     /// Return None if the index is out of bounds.
     /// This operation is O(n) and thread-safe.
     pub fn get(&self, index: usize) -> Option<&T> {
-        let mut current = unsafe { self.head.load(Ordering::SeqCst).as_ref().unwrap() };
+        let mut current = unsafe { self.head.load(Ordering::SeqCst).as_mut().unwrap() };
 
         // Check the cache
         let ptr = self.cache.get(index);
@@ -135,11 +138,14 @@ impl<T> List<T> {
         }
 
         for _ in 0..index {
-            match unsafe { current.next.load(Ordering::SeqCst).as_ref() } {
+            match unsafe { current.next.load(Ordering::SeqCst).as_mut() } {
                 None => return None,
                 Some(next) => current = next,
             }
         }
+
+        // Update the cache
+        self.cache.put(index, current);
 
         Some(&current.value)
     }
@@ -299,5 +305,60 @@ mod test {
         vec.sort();
 
         assert_eq!(vec, (-1..100).into_iter().collect::<Vec<_>>());
+    }
+
+    #[test]
+    #[with_loom]
+    fn test_cache_basics() {
+        init();
+
+        let cache = Cache::new(ptr::null_mut());
+
+        for i in 0..10 {
+            cache.put(i, i as *mut u8);
+        }
+
+        for i in 0..10 {
+            assert_eq!(cache.get(i), i as *mut u8);
+        }
+    }
+
+    #[test]
+    #[with_loom]
+    fn test_rollover_basics() {
+        init();
+
+        let cache = Cache::new(ptr::null_mut());
+
+        for i in 0..CACHE_SIZE {
+            cache.put(i, (i + 10) as *mut u8);
+        }
+
+        assert_eq!(cache.get(0), 10 as *mut u8);
+        cache.put(666, 666 as *mut u8);
+        assert_eq!(cache.get(0), ptr::null_mut());
+        assert_eq!(cache.get(666), 666 as *mut u8);
+    }
+
+    #[test]
+    #[with_loom]
+    fn test_rollover_complete() {
+        init();
+
+        let cache = Cache::new(ptr::null_mut());
+
+        for i in 0..(CACHE_SIZE * 2) {
+            cache.put(i, i as *mut u8);
+        }
+
+        // assert that all previous keys got rolled over
+        for i in 0..CACHE_SIZE {
+            assert_eq!(cache.get(i), ptr::null_mut());
+        }
+
+        // assert that all new keys are in the cache
+        for i in CACHE_SIZE..(CACHE_SIZE * 2) {
+            assert_eq!(cache.get(i), i as *mut u8);
+        }
     }
 }
