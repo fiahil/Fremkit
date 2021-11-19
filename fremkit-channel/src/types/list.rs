@@ -151,12 +151,15 @@ impl<T> List<T> {
     }
 
     // Return a reference to the last element of the list.
+    #[inline]
     pub fn tail(&self) -> &T {
-        unsafe { &self.tail.load(Ordering::Relaxed).as_ref().unwrap().value }
+        let ptr = unsafe { &*self.tail.load(Ordering::Relaxed) };
+
+        &ptr.value
     }
 
-    #[allow(dead_code)]
     /// Create a new head -> tail list iterator
+    #[allow(dead_code)]
     pub fn iter(&self) -> ListIterator<T> {
         ListIterator { cursor: &self.head }
     }
