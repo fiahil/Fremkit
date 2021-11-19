@@ -179,6 +179,7 @@ mod test {
 
     #[test]
     #[with_loom]
+    #[should_panic]
     fn test_log_capacity_excess() {
         init();
 
