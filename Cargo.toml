@@ -3,10 +3,8 @@ resolver = "2"
 members = [
     "fremkit-macro",
     "fremkit-channel",
+    "fremkit-maker",
 ]
 
 [profile.release]
-lto = true
-
-[profile.bench]
 lto = true

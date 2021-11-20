@@ -1,0 +1,16 @@
+[package]
+name = "fremkit-maker"
+version = "0.1.0"
+edition = "2021"
+authors = ["Quentin Leffray <fiahil@gmail.com>"]
+description = "A distributed broadcast log"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "^1.0"
+clap = "3.0.0-beta.5"
+env_logger = "^0.9"
+fremkit-channel = { path = "../fremkit-channel" }
+log = "^0.4"
+thiserror = "^1.0"
