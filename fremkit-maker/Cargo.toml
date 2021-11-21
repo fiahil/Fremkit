@@ -14,3 +14,16 @@ env_logger = "^0.9"
 fremkit-channel = { path = "../fremkit-channel" }
 log = "^0.4"
 thiserror = "^1.0"
+zmq = "^0.9"
+
+[lib]
+name = "libmaker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "maker"
+path = "src/bin/maker/main.rs"
+
+[[bin]]
+name = "client"
+path = "src/bin/client/main.rs"
