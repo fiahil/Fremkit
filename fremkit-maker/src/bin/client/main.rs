@@ -4,11 +4,9 @@ use anyhow::Result;
 use clap::Parser;
 use log::{debug, info};
 
-use libmaker::{
-    helpers,
-    net::client::Client,
-    protocol::command::{Command, SnapshotCommand},
-};
+use libmaker::helpers;
+use libmaker::net::client::Client;
+use libmaker::protocol::command::Command;
 
 /// Command Line Interface definition
 #[derive(Parser, Debug)]
@@ -39,13 +37,11 @@ fn main() -> Result<()> {
         match buf.trim() {
             "checksum" | "c" => {
                 debug!("COM: checksum");
-                client.com(Command::Snapshot(SnapshotCommand::Checksum(
-                    client.state.checksum(),
-                )))?;
+                client.com(Command::Checksum(client.state.checksum()))?;
             }
             "snapshot" | "s" => {
                 debug!("COM: snapshot");
-                client.com(Command::Snapshot(SnapshotCommand::Get))?;
+                client.com(Command::Snapshot)?;
             }
             "exit" | "" => {
                 debug!("COM: exit");
@@ -53,9 +49,9 @@ fn main() -> Result<()> {
             }
             "help" | _ => {
                 println!("HELP:");
-                println!("checksum  :  send a checksum valisation command");
-                println!("snapshot  :  get a up-to-date snapshot from the server");
-                println!("exit      :  exit the program");
+                println!("checksum | c :  send a checksum validation command");
+                println!("snapshot | s :  get an up-to-date snapshot from the server");
+                println!("exit         :  exit the program");
             }
         }
     }

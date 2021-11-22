@@ -9,7 +9,6 @@ description = "A distributed broadcast log"
 
 [dependencies]
 anyhow = "^1.0"
-bytes = "^1.1"
 clap = "3.0.0-beta.5"
 env_logger = "^0.9"
 fremkit-channel = { path = "../fremkit-channel" }

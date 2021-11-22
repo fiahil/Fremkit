@@ -1,5 +1,4 @@
 use anyhow::Result;
-use bytes::Bytes;
 use log::{debug, error};
 use zmq::{poll, Context, PollEvents, Socket};
 
@@ -30,11 +29,11 @@ impl Server {
     }
 
     /// Send a response to a client.
-    fn send_response(&self, id: Bytes, response: Response) -> Result<()> {
-        let response: Bytes = response.try_into()?;
+    fn send_response(&self, id: Vec<u8>, response: Response) -> Result<()> {
+        let response: Vec<u8> = response.try_into()?;
 
-        self.commands.send(id.to_vec(), zmq::SNDMORE)?;
-        self.commands.send(response.to_vec(), 0)?;
+        self.commands.send(id, zmq::SNDMORE)?;
+        self.commands.send(response, 0)?;
 
         Ok(())
     }
@@ -52,8 +51,8 @@ impl Server {
             }
 
             if items[0].is_readable() {
-                let id: Bytes = self.commands.recv_bytes(0)?.into();
-                let command: Bytes = self.commands.recv_bytes(0)?.into();
+                let id = self.commands.recv_bytes(0)?;
+                let command = self.commands.recv_bytes(0)?;
                 let command = Command::try_from(command)?;
 
                 debug!("[{:?}] Received command: {:?}", id, command);

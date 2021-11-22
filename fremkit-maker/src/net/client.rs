@@ -4,7 +4,7 @@ use zmq::{Context, Socket};
 
 use crate::{
     core::snapshot::Snapshot,
-    protocol::command::{Command, Response, SnapshotResponse},
+    protocol::command::{Command, Response},
 };
 
 pub struct Client {
@@ -59,15 +59,15 @@ impl Client {
         let rep = self.receive_response()?;
 
         match rep {
-            Response::Snapshot(SnapshotResponse::Snapshot(s)) => {
+            Response::Snapshot(s) => {
                 self.state = s;
 
                 debug!("State updated: {:?}", self.state);
             }
-            Response::Snapshot(SnapshotResponse::ChecksumKO) => {
-                debug!("Checksum KO!");
+            Response::ChecksumFailed => {
+                debug!("Checksum FAILED!");
             }
-            Response::Snapshot(SnapshotResponse::ChecksumOK) => {
+            Response::ChecksumOk => {
                 debug!("Checksum OK!");
             }
         };
