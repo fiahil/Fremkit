@@ -9,6 +9,7 @@ description = "A distributed broadcast log"
 
 [dependencies]
 anyhow = "^1.0"
+crossbeam-channel = "0.5.1"
 clap = "3.0.0-beta.5"
 env_logger = "^0.9"
 fremkit-channel = { path = "../fremkit-channel" }

@@ -8,6 +8,7 @@ use crate::protocol::command::{Command, Response};
 pub struct Server {
     updates: Socket,
     commands: Socket,
+    data: Socket,
 
     state: Snapshot,
 }
@@ -17,13 +18,16 @@ impl Server {
         let ctx = Context::new();
         let updates = ctx.socket(zmq::PUB)?;
         let commands = ctx.socket(zmq::ROUTER)?;
+        let data = ctx.socket(zmq::PULL)?;
 
         updates.bind(&format!("tcp://{}:5555", host))?;
         commands.bind(&format!("tcp://{}:5566", host))?;
+        data.bind(&format!("tcp://{}:5577", host))?;
 
         Ok(Server {
             updates,
             commands,
+            data,
             state: Snapshot::new(),
         })
     }
@@ -42,7 +46,10 @@ impl Server {
         loop {
             debug!("Polling...");
 
-            let items = &mut [self.commands.as_poll_item(PollEvents::POLLIN)];
+            let items = &mut [
+                self.commands.as_poll_item(PollEvents::POLLIN),
+                self.data.as_poll_item(PollEvents::POLLIN),
+            ];
             let timer = poll(items, 5000);
 
             if timer.is_err() {
@@ -62,8 +69,21 @@ impl Server {
                 debug!("[{:?}] Sending response: {:?}", id, response);
 
                 self.send_response(id, response)?;
-            } else {
-                self.state.increment();
+            }
+
+            if items[1].is_readable() {
+                let data = self.data.recv_bytes(0)?;
+                let (key, val): (String, String) = serde_json::from_slice(&data)?;
+
+                debug!("Received data: {:?} = {:?}", key, val);
+
+                self.state.update(key, val);
+
+                debug!("State updated!");
+
+                self.updates.send(data, 0)?;
+
+                debug!("State update broadcasted!");
             }
         }
     }

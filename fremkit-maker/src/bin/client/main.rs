@@ -1,12 +1,19 @@
-use std::io::{stdin, stdout, Write};
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use clap::Parser;
-use log::{debug, info};
+use crossbeam_channel::unbounded;
+use libmaker::core::snapshot::Snapshot;
+use log::info;
 
 use libmaker::helpers;
 use libmaker::net::client::Client;
-use libmaker::protocol::command::Command;
+
+use crate::input::Input;
+use crate::network::Network;
+
+mod input;
+mod network;
 
 /// Command Line Interface definition
 #[derive(Parser, Debug)]
@@ -22,39 +29,19 @@ fn main() -> Result<()> {
     let setup = Setup::parse();
     helpers::loginit(setup.verbose);
 
-    let mut client = Client::new("0.0.0.0")?;
+    let state = Arc::new(Mutex::new(Snapshot::new()));
+
+    let client = Client::new("0.0.0.0", state.clone())?;
+    let (tx_com, rx_com) = unbounded();
+    let (tx_data, rx_data) = unbounded();
 
     info!("Client started!");
 
-    loop {
-        print!("> ");
-        stdout().flush()?;
+    let net = Network::new(client, rx_com, rx_data);
+    let inp = Input::new(state, tx_com, tx_data);
 
-        // Match stdin input to a command
-        let mut buf = String::new();
-        stdin().read_line(&mut buf)?;
+    let j1 = inp.start();
+    let _ = net.start();
 
-        match buf.trim() {
-            "checksum" | "c" => {
-                debug!("COM: checksum");
-                client.com(Command::Checksum(client.state.checksum()))?;
-            }
-            "snapshot" | "s" => {
-                debug!("COM: snapshot");
-                client.com(Command::Snapshot)?;
-            }
-            "exit" | "" => {
-                debug!("COM: exit");
-                break;
-            }
-            "help" | _ => {
-                println!("HELP:");
-                println!("checksum | c :  send a checksum validation command");
-                println!("snapshot | s :  get an up-to-date snapshot from the server");
-                println!("exit         :  exit the program");
-            }
-        }
-    }
-
-    Ok(())
+    j1.join().expect("input thread panicked")
 }

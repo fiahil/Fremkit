@@ -38,7 +38,15 @@ impl TryFrom<Vec<u8>> for Command {
     type Error = anyhow::Error;
 
     fn try_from(buffer: Vec<u8>) -> Result<Self> {
-        serde_json::from_slice(&buffer).with_context(|| "could not deserialize buffer")
+        serde_json::from_slice(&buffer).with_context(|| "could not deserialize buffer (command)")
+    }
+}
+
+impl TryFrom<Vec<u8>> for Response {
+    type Error = anyhow::Error;
+
+    fn try_from(buffer: Vec<u8>) -> Result<Self> {
+        serde_json::from_slice(&buffer).with_context(|| "could not deserialize buffer (response)")
     }
 }
 
