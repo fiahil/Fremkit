@@ -1,9 +1,14 @@
+use std::io::{stdin, stdout, Write};
+
 use anyhow::Result;
 use clap::Parser;
-use log::info;
-use zmq::{Context, Socket};
+use log::{debug, info};
 
-use libmaker::helpers;
+use libmaker::{
+    helpers,
+    net::client::Client,
+    protocol::command::{Command, SnapshotCommand},
+};
 
 /// Command Line Interface definition
 #[derive(Parser, Debug)]
@@ -15,47 +20,45 @@ pub struct Setup {
     pub verbose: u8,
 }
 
-struct Client {
-    ctx: Context,
-    sub_socket: Socket,
-    dealer_socket: Socket,
-}
-
-impl Client {
-    pub fn new() -> Result<Self> {
-        let ctx = Context::new();
-        let sub_socket = ctx.socket(zmq::SUB)?;
-        let dealer_socket = ctx.socket(zmq::DEALER)?;
-
-        sub_socket.set_subscribe(b"")?;
-
-        sub_socket.connect("tcp://0.0.0.0:5555")?;
-        dealer_socket.connect("tcp://0.0.0.0:5566")?;
-
-        Ok(Client {
-            ctx,
-            sub_socket,
-            dealer_socket,
-        })
-    }
-}
-
 fn main() -> Result<()> {
     let setup = Setup::parse();
     helpers::loginit(setup.verbose);
 
-    let client = Client::new()?;
+    let mut client = Client::new("0.0.0.0")?;
 
-    info!("Client started");
-    info!("> {:?}", "HI");
+    info!("Client started!");
 
-    client.dealer_socket.send("HI", 0)?;
+    loop {
+        print!("> ");
+        stdout().flush()?;
 
-    let msg = client.sub_socket.recv_msg(0)?;
-    info!("< {:?}", msg.as_str().unwrap());
+        // Match stdin input to a command
+        let mut buf = String::new();
+        stdin().read_line(&mut buf)?;
 
-    let msg = client.dealer_socket.recv_msg(0)?;
-    info!("< {:?}", msg.as_str().unwrap());
+        match buf.trim() {
+            "checksum" | "c" => {
+                debug!("COM: checksum");
+                client.com(Command::Snapshot(SnapshotCommand::Checksum(
+                    client.state.checksum(),
+                )))?;
+            }
+            "snapshot" | "s" => {
+                debug!("COM: snapshot");
+                client.com(Command::Snapshot(SnapshotCommand::Get))?;
+            }
+            "exit" | "" => {
+                debug!("COM: exit");
+                break;
+            }
+            "help" | _ => {
+                println!("HELP:");
+                println!("checksum  :  send a checksum valisation command");
+                println!("snapshot  :  get a up-to-date snapshot from the server");
+                println!("exit      :  exit the program");
+            }
+        }
+    }
 
     Ok(())
 }
