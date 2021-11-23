@@ -6,13 +6,19 @@ use zmq::{poll, Context, PollEvents, Socket};
 
 use crate::{
     core::snapshot::Snapshot,
-    protocol::command::{Command, Response},
+    protocol::{
+        command::Command,
+        query::{Answer, Query},
+    },
 };
 
 pub struct Client {
-    updates: Socket,
-    commands: Socket,
-    data: Socket,
+    /// The socker used to send queries and receive answers to/from the server.
+    qry: Socket,
+    /// The socket used to send commands to the server.
+    cmd: Socket,
+    /// The socket used to receive messages from the server.
+    msg: Socket,
 
     state: Arc<Mutex<Snapshot>>,
 }
@@ -20,32 +26,22 @@ pub struct Client {
 impl Client {
     pub fn new(host: &str, state: Arc<Mutex<Snapshot>>) -> Result<Self> {
         let ctx = Context::new();
-        let updates = ctx.socket(zmq::SUB)?;
-        let commands = ctx.socket(zmq::DEALER)?;
-        let data = ctx.socket(zmq::PUSH)?;
+        let msg = ctx.socket(zmq::SUB)?;
+        let cmd = ctx.socket(zmq::PUSH)?;
+        let qry = ctx.socket(zmq::DEALER)?;
 
-        updates.set_subscribe(b"")?;
+        msg.set_subscribe(b"")?;
 
-        updates.connect(&format!("tcp://{}:5555", host))?;
-        commands.connect(&format!("tcp://{}:5566", host))?;
-        data.connect(&format!("tcp://{}:5577", host))?;
+        qry.connect(&format!("tcp://{}:5555", host))?;
+        cmd.connect(&format!("tcp://{}:5566", host))?;
+        msg.connect(&format!("tcp://{}:5577", host))?;
 
         Ok(Client {
-            updates,
-            commands,
-            data,
+            qry,
+            cmd,
+            msg,
             state,
         })
-    }
-
-    /// Send an update to the server.
-    pub fn send_update(&self, key: String, val: String) -> Result<()> {
-        debug!("Sending update: {:?} = {:?}", key, val);
-
-        let update = serde_json::to_vec(&(key, val))?;
-        self.data.send(update, 0)?;
-
-        Ok(())
     }
 
     /// Send a command to the server.
@@ -53,7 +49,17 @@ impl Client {
         debug!("Sending command: {:?}", command);
 
         let command = serde_json::to_vec(&command)?;
-        self.commands.send(command, 0)?;
+        self.cmd.send(command, 0)?;
+
+        Ok(())
+    }
+
+    /// Send a query to the server.
+    pub fn send_query(&self, query: Query) -> Result<()> {
+        debug!("Sending query: {:?}", query);
+
+        let query = serde_json::to_vec(&query)?;
+        self.qry.send(query, 0)?;
 
         Ok(())
     }
@@ -63,48 +69,51 @@ impl Client {
         debug!("Polling...");
 
         let items = &mut [
-            self.commands.as_poll_item(PollEvents::POLLIN),
-            self.updates.as_poll_item(PollEvents::POLLIN),
+            self.qry.as_poll_item(PollEvents::POLLIN),
+            self.msg.as_poll_item(PollEvents::POLLIN),
         ];
         let timer = poll(items, timeout);
 
-        if timer.is_err() {
-            error!("Error polling for responses: {:?}", timer.err().unwrap());
-            timer?;
+        match timer {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error polling for sockets: {:?}", e);
+                return Err(anyhow::anyhow!("TODO: use custom error: {:?}", e));
+            }
         }
 
         if items[0].is_readable() {
-            let response = self.commands.recv_bytes(0)?;
-            let response = Response::try_from(response)?;
+            let answer = self.qry.recv_bytes(0)?;
+            let answer = Answer::try_from(answer)?;
 
-            debug!("Received response: {:?}", response);
+            debug!("Received: {:?}", answer);
 
-            match response {
-                Response::Snapshot(s) => {
+            match answer {
+                Answer::Snapshot(s) => {
                     let mut lock = self.state.lock().unwrap();
                     *lock = s;
 
                     debug!("State updated: {:?}", self.state);
                 }
-                Response::ChecksumFailed => {
+                Answer::ChecksumFailed => {
                     debug!("Checksum FAILED!");
                 }
-                Response::ChecksumOk => {
+                Answer::ChecksumOk => {
                     debug!("Checksum OK!");
                 }
             };
         }
 
         if items[1].is_readable() {
-            let data = self.updates.recv_bytes(0)?;
-            let (key, val): (String, String) = serde_json::from_slice(&data)?;
+            let data = self.msg.recv_bytes(0)?;
+            let message = serde_json::from_slice(&data)?;
 
-            debug!("Received state update broadcast: {:?} = {:?}", key, val);
+            debug!("Received: {:?}", message);
 
             let mut lock = self.state.lock().unwrap();
-            lock.update(key, val);
+            lock.update_msg(&message);
 
-            debug!("State updated: {:?}", *lock);
+            debug!("State updated: {:?}", lock);
         }
 
         Ok(())

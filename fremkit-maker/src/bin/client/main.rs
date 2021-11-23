@@ -32,13 +32,13 @@ fn main() -> Result<()> {
     let state = Arc::new(Mutex::new(Snapshot::new()));
 
     let client = Client::new("0.0.0.0", state.clone())?;
-    let (tx_com, rx_com) = unbounded();
-    let (tx_data, rx_data) = unbounded();
+    let (tx_qry, rx_qry) = unbounded();
+    let (tx_cmd, rx_cmd) = unbounded();
 
     info!("Client started!");
 
-    let net = Network::new(client, rx_com, rx_data);
-    let inp = Input::new(state, tx_com, tx_data);
+    let net = Network::new(client, rx_qry, rx_cmd);
+    let inp = Input::new(state, tx_qry, tx_cmd);
 
     let j1 = inp.start();
     let _ = net.start();

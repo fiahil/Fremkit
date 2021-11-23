@@ -5,13 +5,14 @@ use std::thread::{self, JoinHandle};
 use crossbeam_channel::Sender;
 use libmaker::core::snapshot::Snapshot;
 use libmaker::protocol::command::Command;
+use libmaker::protocol::query::Query;
 
 use anyhow::Result;
 
 pub struct Input {
     state: Arc<Mutex<Snapshot>>,
-    tx_com: Sender<Command>,
-    tx_data: Sender<(String, String)>,
+    tx_qry: Sender<Query>,
+    tx_cmd: Sender<Command>,
 }
 
 impl Input {
@@ -19,13 +20,13 @@ impl Input {
     /// given on the command line
     pub fn new(
         state: Arc<Mutex<Snapshot>>,
-        tx_com: Sender<Command>,
-        tx_data: Sender<(String, String)>,
+        tx_qry: Sender<Query>,
+        tx_cmd: Sender<Command>,
     ) -> Self {
         Self {
             state,
-            tx_com,
-            tx_data,
+            tx_qry,
+            tx_cmd,
         }
     }
 
@@ -35,53 +36,56 @@ impl Input {
             loop {
                 disp("> ")?;
 
-                match stdread()?.as_str() {
-                    "show" | "w" => {
+                match stdread()?
+                    .as_str()
+                    .split(' ')
+                    .collect::<Vec<_>>()
+                    .as_slice()
+                {
+                    ["w"] => {
                         println!("COM: show");
                         println!("{:#?}", *self.state.lock().unwrap());
                         println!("OK!");
                     }
-                    "checksum" | "c" => {
+                    ["q", "k"] => {
                         println!("COM: checksum");
                         let lock = self.state.lock().unwrap();
-                        let command = Command::Checksum(lock.checksum());
+                        let command = Query::Checksum(lock.checksum());
 
-                        self.tx_com.send(command)?;
+                        self.tx_qry.send(command)?;
 
                         println!("OK!");
                     }
-                    "snapshot" | "s" => {
+                    ["q", "s"] => {
                         println!("COM: snapshot");
-                        self.tx_com.send(Command::Snapshot)?;
+                        self.tx_qry.send(Query::Snapshot)?;
 
                         println!("OK!");
                     }
-                    "update" | "u" => {
+                    ["c", key, val] => {
                         println!("COM: update");
 
-                        disp("update key > ")?;
-                        let key = stdread()?;
-
-                        disp("update val > ")?;
-                        let val = stdread()?;
-
-                        self.tx_data.send((key, val))?;
+                        self.tx_cmd.send(Command::Update {
+                            key: key.to_string(),
+                            val: val.to_string(),
+                        })?;
 
                         println!("OK!");
                     }
-                    "exit" | "" => {
+                    ["e"] | [""] => {
                         println!("COM: exit");
                         println!("OK!");
                         break;
                     }
-                    "help" | _ => {
+                    ["h"] | _ => {
                         println!("HELP:");
 
-                        println!("show     | w :  show local state");
-                        println!("checksum | c :  send a checksum validation command");
-                        println!("snapshot | s :  get an up-to-date snapshot from the server");
-                        println!("update   | u :  send an update to the server");
-                        println!("exit         :  exit the program");
+                        println!("h          |  (help)      show this help");
+                        println!("w          |  (show)      show local state");
+                        println!("q k        |  (checksum)  send a checksum validation query");
+                        println!("q s        |  (snapshot)  fetch an up-to-date snapshot");
+                        println!("c key val  |  (update)    send an update to the server");
+                        println!("e          |  (exit)      exit the program");
                     }
                 }
             }

@@ -3,12 +3,13 @@ use log::{debug, error};
 use zmq::{poll, Context, PollEvents, Socket};
 
 use crate::core::snapshot::Snapshot;
-use crate::protocol::command::{Command, Response};
+use crate::protocol::command::{Command, Message};
+use crate::protocol::query::{Answer, Query};
 
 pub struct Server {
-    updates: Socket,
-    commands: Socket,
-    data: Socket,
+    msg: Socket,
+    qry: Socket,
+    cmd: Socket,
 
     state: Snapshot,
 }
@@ -16,28 +17,28 @@ pub struct Server {
 impl Server {
     pub fn new(host: &str) -> Result<Self> {
         let ctx = Context::new();
-        let updates = ctx.socket(zmq::PUB)?;
-        let commands = ctx.socket(zmq::ROUTER)?;
-        let data = ctx.socket(zmq::PULL)?;
+        let msg = ctx.socket(zmq::PUB)?;
+        let cmd = ctx.socket(zmq::PULL)?;
+        let qry = ctx.socket(zmq::ROUTER)?;
 
-        updates.bind(&format!("tcp://{}:5555", host))?;
-        commands.bind(&format!("tcp://{}:5566", host))?;
-        data.bind(&format!("tcp://{}:5577", host))?;
+        qry.bind(&format!("tcp://{}:5555", host))?;
+        cmd.bind(&format!("tcp://{}:5566", host))?;
+        msg.bind(&format!("tcp://{}:5577", host))?;
 
         Ok(Server {
-            updates,
-            commands,
-            data,
+            msg,
+            qry,
+            cmd,
             state: Snapshot::new(),
         })
     }
 
-    /// Send a response to a client.
-    fn send_response(&self, id: Vec<u8>, response: Response) -> Result<()> {
-        let response: Vec<u8> = response.try_into()?;
+    /// Send an answer to a client.
+    fn send_answer(&self, id: Vec<u8>, answer: Answer) -> Result<()> {
+        let response: Vec<u8> = answer.try_into()?;
 
-        self.commands.send(id, zmq::SNDMORE)?;
-        self.commands.send(response, 0)?;
+        self.qry.send(id, zmq::SNDMORE)?;
+        self.qry.send(response, 0)?;
 
         Ok(())
     }
@@ -47,41 +48,49 @@ impl Server {
             debug!("Polling...");
 
             let items = &mut [
-                self.commands.as_poll_item(PollEvents::POLLIN),
-                self.data.as_poll_item(PollEvents::POLLIN),
+                self.qry.as_poll_item(PollEvents::POLLIN),
+                self.cmd.as_poll_item(PollEvents::POLLIN),
             ];
             let timer = poll(items, 5000);
 
-            if timer.is_err() {
-                error!("Error polling for commands: {:?}", timer.err().unwrap());
-                continue;
+            match timer {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("Error polling for sockets: {:?}", e);
+                    return Err(anyhow::anyhow!("TODO: use custom error: {:?}", e));
+                }
             }
 
             if items[0].is_readable() {
-                let id = self.commands.recv_bytes(0)?;
-                let command = self.commands.recv_bytes(0)?;
-                let command = Command::try_from(command)?;
+                let id = self.qry.recv_bytes(0)?;
+                let query = self.qry.recv_bytes(0)?;
+                let query = Query::try_from(query)?;
 
-                debug!("[{:?}] Received command: {:?}", id, command);
+                debug!("[{:?}] Received: {:?}", id, query);
 
-                let response = command.apply(&self.state);
+                let answer = query.apply(&self.state);
 
-                debug!("[{:?}] Sending response: {:?}", id, response);
+                debug!("[{:?}] Sending: {:?}", id, answer);
 
-                self.send_response(id, response)?;
+                self.send_answer(id, answer)?;
             }
 
             if items[1].is_readable() {
-                let data = self.data.recv_bytes(0)?;
-                let (key, val): (String, String) = serde_json::from_slice(&data)?;
+                let data = self.cmd.recv_bytes(0)?;
+                let command = serde_json::from_slice(&data)?;
 
-                debug!("Received data: {:?} = {:?}", key, val);
+                debug!("Received: {:?}", command);
 
-                self.state.update(key, val);
+                self.state.update(&command);
 
                 debug!("State updated!");
 
-                self.updates.send(data, 0)?;
+                match command {
+                    Command::Update { key, val } => {
+                        let msg = serde_json::to_vec(&Message::StateUpdated { key, val })?;
+                        self.msg.send(msg, 0)?;
+                    }
+                }
 
                 debug!("State update broadcasted!");
             }
