@@ -1,4 +1,4 @@
-use crate::core::snapshot::Snapshot;
+use crate::core::{snapshot::Snapshot, state::State};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -20,9 +20,9 @@ pub enum Answer {
 
 impl Query {
     /// Create a corresponding answer to a query.
-    pub fn apply(self, state: &Snapshot) -> Answer {
+    pub fn apply(self, state: &State) -> Answer {
         match self {
-            Query::Snapshot => Answer::Snapshot(state.clone()),
+            Query::Snapshot => Answer::Snapshot(Snapshot::from(state)),
             Query::Checksum(c) => {
                 if state.checksum() == c {
                     Answer::ChecksumOk

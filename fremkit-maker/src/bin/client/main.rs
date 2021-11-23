@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use clap::Parser;
 use crossbeam_channel::unbounded;
-use libmaker::core::snapshot::Snapshot;
+use libmaker::core::state::State;
 use log::info;
 
 use libmaker::helpers;
@@ -29,7 +29,7 @@ fn main() -> Result<()> {
     let setup = Setup::parse();
     helpers::loginit(setup.verbose);
 
-    let state = Arc::new(Mutex::new(Snapshot::new()));
+    let state = Arc::new(Mutex::new(State::new()));
 
     let client = Client::new("0.0.0.0", state.clone())?;
     let (tx_qry, rx_qry) = unbounded();

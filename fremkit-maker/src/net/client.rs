@@ -5,7 +5,7 @@ use log::{debug, error};
 use zmq::{poll, Context, PollEvents, Socket};
 
 use crate::{
-    core::snapshot::Snapshot,
+    core::state::State,
     protocol::{
         command::Command,
         query::{Answer, Query},
@@ -20,11 +20,11 @@ pub struct Client {
     /// The socket used to receive messages from the server.
     msg: Socket,
 
-    state: Arc<Mutex<Snapshot>>,
+    state: Arc<Mutex<State>>,
 }
 
 impl Client {
-    pub fn new(host: &str, state: Arc<Mutex<Snapshot>>) -> Result<Self> {
+    pub fn new(host: &str, state: Arc<Mutex<State>>) -> Result<Self> {
         let ctx = Context::new();
         let msg = ctx.socket(zmq::SUB)?;
         let cmd = ctx.socket(zmq::PUSH)?;
@@ -91,7 +91,7 @@ impl Client {
             match answer {
                 Answer::Snapshot(s) => {
                     let mut lock = self.state.lock().unwrap();
-                    *lock = s;
+                    *lock = State::from(s);
 
                     debug!("State updated: {:?}", self.state);
                 }
@@ -111,7 +111,7 @@ impl Client {
             debug!("Received: {:?}", message);
 
             let mut lock = self.state.lock().unwrap();
-            lock.update_msg(&message);
+            lock.update_msg(message);
 
             debug!("State updated: {:?}", lock);
         }

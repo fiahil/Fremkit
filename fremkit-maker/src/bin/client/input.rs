@@ -3,14 +3,14 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crossbeam_channel::Sender;
-use libmaker::core::snapshot::Snapshot;
+use libmaker::core::state::State;
 use libmaker::protocol::command::Command;
 use libmaker::protocol::query::Query;
 
 use anyhow::Result;
 
 pub struct Input {
-    state: Arc<Mutex<Snapshot>>,
+    state: Arc<Mutex<State>>,
     tx_qry: Sender<Query>,
     tx_cmd: Sender<Command>,
 }
@@ -18,11 +18,7 @@ pub struct Input {
 impl Input {
     /// Create a new Input that will listen for commands
     /// given on the command line
-    pub fn new(
-        state: Arc<Mutex<Snapshot>>,
-        tx_qry: Sender<Query>,
-        tx_cmd: Sender<Command>,
-    ) -> Self {
+    pub fn new(state: Arc<Mutex<State>>, tx_qry: Sender<Query>, tx_cmd: Sender<Command>) -> Self {
         Self {
             state,
             tx_qry,

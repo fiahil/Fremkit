@@ -2,7 +2,7 @@ use anyhow::Result;
 use log::{debug, error};
 use zmq::{poll, Context, PollEvents, Socket};
 
-use crate::core::snapshot::Snapshot;
+use crate::core::state::State;
 use crate::protocol::command::{Command, Message};
 use crate::protocol::query::{Answer, Query};
 
@@ -11,7 +11,7 @@ pub struct Server {
     qry: Socket,
     cmd: Socket,
 
-    state: Snapshot,
+    state: State,
 }
 
 impl Server {
@@ -29,7 +29,7 @@ impl Server {
             msg,
             qry,
             cmd,
-            state: Snapshot::new(),
+            state: State::new(),
         })
     }
 
@@ -81,11 +81,11 @@ impl Server {
 
                 debug!("Received: {:?}", command);
 
-                self.state.update(&command);
+                self.state.update_com(command);
 
                 debug!("State updated!");
 
-                match command {
+                match serde_json::from_slice(&data)? {
                     Command::Update { key, val } => {
                         let msg = serde_json::to_vec(&Message::StateUpdated { key, val })?;
                         self.msg.send(msg, 0)?;
