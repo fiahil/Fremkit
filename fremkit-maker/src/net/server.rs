@@ -1,15 +1,19 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::{debug, error};
 use zmq::{poll, Context, PollEvents, Socket};
 
 use crate::core::state::State;
-use crate::protocol::command::{Command, Message};
-use crate::protocol::query::{Answer, Query};
+use crate::error::FremkitError;
+use crate::protocol::command::Command;
+use crate::protocol::query::Query;
 
 pub struct Server {
-    msg: Socket,
+    /// The socket used to receive queries from the client and send answers.
     qry: Socket,
+    /// The socket used to receive commands from the client and send responses.
     cmd: Socket,
+    /// The socket used to send broadcast messages to the client.
+    msg: Socket,
 
     state: State,
 }
@@ -17,33 +21,23 @@ pub struct Server {
 impl Server {
     pub fn new(host: &str) -> Result<Self> {
         let ctx = Context::new();
-        let msg = ctx.socket(zmq::PUB)?;
-        let cmd = ctx.socket(zmq::PULL)?;
         let qry = ctx.socket(zmq::ROUTER)?;
+        let cmd = ctx.socket(zmq::ROUTER)?;
+        let msg = ctx.socket(zmq::PUB)?;
 
         qry.bind(&format!("tcp://{}:5555", host))?;
         cmd.bind(&format!("tcp://{}:5566", host))?;
         msg.bind(&format!("tcp://{}:5577", host))?;
 
         Ok(Server {
-            msg,
             qry,
             cmd,
+            msg,
             state: State::new(),
         })
     }
 
-    /// Send an answer to a client.
-    fn send_answer(&self, id: Vec<u8>, answer: Answer) -> Result<()> {
-        let response: Vec<u8> = answer.try_into()?;
-
-        self.qry.send(id, zmq::SNDMORE)?;
-        self.qry.send(response, 0)?;
-
-        Ok(())
-    }
-
-    pub fn run(mut self) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         loop {
             debug!("Polling...");
 
@@ -53,47 +47,60 @@ impl Server {
             ];
             let timer = poll(items, 5000);
 
-            match timer {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error polling for sockets: {:?}", e);
-                    return Err(anyhow::anyhow!("TODO: use custom error: {:?}", e));
-                }
+            if let Err(e) = timer {
+                error!("Error polling for sockets: {:?}", e);
+                bail!(FremkitError::NetworkError(e));
             }
 
             if items[0].is_readable() {
-                let id = self.qry.recv_bytes(0)?;
-                let query = self.qry.recv_bytes(0)?;
-                let query = Query::try_from(query)?;
-
-                debug!("[{:?}] Received: {:?}", id, query);
-
-                let answer = query.apply(&self.state);
-
-                debug!("[{:?}] Sending: {:?}", id, answer);
-
-                self.send_answer(id, answer)?;
+                self.handle_query()?;
             }
 
             if items[1].is_readable() {
-                let data = self.cmd.recv_bytes(0)?;
-                let command = serde_json::from_slice(&data)?;
-
-                debug!("Received: {:?}", command);
-
-                self.state.update_com(command);
-
-                debug!("State updated!");
-
-                match serde_json::from_slice(&data)? {
-                    Command::Update { key, val } => {
-                        let msg = serde_json::to_vec(&Message::StateUpdated { key, val })?;
-                        self.msg.send(msg, 0)?;
-                    }
-                }
-
-                debug!("State update broadcasted!");
+                self.handle_command()?;
             }
         }
+    }
+}
+
+impl Server {
+    /// Handle a query from the client.
+    fn handle_query(&self) -> Result<()> {
+        let id = self.qry.recv_bytes(0)?;
+        let query = self.qry.recv_bytes(0)?;
+        let query = Query::try_from(query)?;
+
+        debug!("[{:?}] Received: {:?}", id, query);
+
+        let answer = query.apply(&self.state);
+
+        debug!("[{:?}] Sending: {:?}", id, answer);
+
+        let answer: Vec<u8> = answer.try_into()?;
+
+        self.qry.send(id, zmq::SNDMORE)?;
+        self.qry.send(answer, 0)?;
+
+        Ok(())
+    }
+
+    /// Handle a command from the client.
+    fn handle_command(&self) -> Result<()> {
+        let id = self.cmd.recv_bytes(0)?;
+        let command = self.cmd.recv_bytes(0)?;
+        let command = Command::try_from(command)?;
+
+        debug!("[{:?}] Received: {:?}", id, command);
+
+        let response = command.apply(&self.state);
+
+        debug!("[{:?}] Sending: {:?}", id, response);
+
+        let response: Vec<u8> = response.try_into()?;
+
+        self.cmd.send(id, zmq::SNDMORE)?;
+        self.cmd.send(response, 0)?;
+
+        Ok(())
     }
 }

@@ -1,79 +1,71 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use fremkit_channel::unbounded::Channel;
-
-use crate::protocol::command::{Command, Message};
 
 use super::snapshot::Snapshot;
 
 /// Copy of the current state of the system
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct State {
-    data: HashMap<String, Channel<String>>,
-    pub version: u32,
+    data: Arc<Mutex<HashMap<String, Channel<String>>>>,
+    version: Arc<Mutex<u32>>,
 }
 
 impl State {
     pub fn new() -> Self {
         State {
-            data: HashMap::new(),
-            version: 0,
+            data: Arc::new(Mutex::new(HashMap::new())),
+            version: Arc::new(Mutex::new(0)),
         }
     }
 
     pub fn checksum(&self) -> String {
-        format!("v{}", self.version)
+        format!("v{}", self.version.lock().unwrap())
     }
 
-    pub fn update_com(&mut self, command: Command) {
-        match command {
-            Command::Update { key, val } => {
-                self.data
-                    .entry(key)
-                    .and_modify(|c| {
-                        c.push(val);
-                    })
-                    .or_default();
+    /// put a new value into a channel
+    pub fn put(&self, key: &String, val: String) -> usize {
+        let mut lock = self.data.lock().unwrap();
+        let channel = lock.entry(key.clone()).or_default();
 
-                self.version += 1;
-            }
-        }
+        let idx = channel.push(val);
+
+        *self.version.lock().unwrap() += 1;
+
+        idx
     }
 
-    pub fn update_msg(&mut self, message: Message) {
-        match message {
-            Message::StateUpdated { key, val } => {
-                self.data
-                    .entry(key)
-                    .and_modify(|c| {
-                        c.push(val);
-                    })
-                    .or_default();
-
-                self.version += 1;
-            }
-        }
+    /// get a value from a channel
+    pub fn get(&self, key: &String, idx: usize) -> Option<String> {
+        self.data
+            .lock()
+            .unwrap()
+            .get(key)
+            .and_then(|channel| channel.get(idx).cloned())
     }
 }
 
 impl From<Snapshot> for State {
     fn from(snapshot: Snapshot) -> Self {
         State {
-            data: snapshot
-                .data
-                .into_iter()
-                .map(|(k, vs)| {
-                    // TODO: Maybe improve ergonomics for channel to vec and vice-versa
-                    let channel = Channel::new();
+            data: Arc::new(Mutex::new(
+                snapshot
+                    .data
+                    .into_iter()
+                    .map(|(k, vs)| {
+                        // TODO: Maybe improve ergonomics for channel to vec and vice-versa
+                        let channel = Channel::new();
 
-                    for v in vs {
-                        channel.push(v);
-                    }
+                        for v in vs {
+                            channel.push(v);
+                        }
 
-                    (k, channel)
-                })
-                .collect(),
-            version: snapshot.version,
+                        (k, channel)
+                    })
+                    .collect(),
+            )),
+            version: Arc::new(Mutex::new(snapshot.version)),
         }
     }
 }
@@ -83,10 +75,12 @@ impl From<&State> for Snapshot {
         Snapshot {
             data: state
                 .data
+                .lock()
+                .unwrap()
                 .iter()
                 .map(|(k, v)| (k.clone(), v.iter().cloned().collect()))
                 .collect(),
-            version: state.version,
+            version: *state.version.lock().unwrap(),
         }
     }
 }

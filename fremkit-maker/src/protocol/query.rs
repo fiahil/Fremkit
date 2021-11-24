@@ -1,6 +1,8 @@
-use crate::core::{snapshot::Snapshot, state::State};
+use crate::core::snapshot::Snapshot;
+use crate::core::state::State;
+use crate::error::FremkitError;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 /// A query sent from the client to the server.
@@ -35,25 +37,33 @@ impl Query {
 }
 
 impl TryFrom<Vec<u8>> for Query {
-    type Error = anyhow::Error;
+    type Error = FremkitError;
 
-    fn try_from(buffer: Vec<u8>) -> Result<Self> {
-        serde_json::from_slice(&buffer).with_context(|| "could not deserialize buffer (query)")
+    fn try_from(buffer: Vec<u8>) -> Result<Self, FremkitError> {
+        serde_json::from_slice(&buffer).map_err(|e| FremkitError::from(e))
+    }
+}
+
+impl TryInto<Vec<u8>> for Query {
+    type Error = FremkitError;
+
+    fn try_into(self) -> Result<Vec<u8>, FremkitError> {
+        serde_json::to_vec(&self).map_err(|e| FremkitError::from(e))
     }
 }
 
 impl TryFrom<Vec<u8>> for Answer {
-    type Error = anyhow::Error;
+    type Error = FremkitError;
 
-    fn try_from(buffer: Vec<u8>) -> Result<Self> {
-        serde_json::from_slice(&buffer).with_context(|| "could not deserialize buffer (answer)")
+    fn try_from(buffer: Vec<u8>) -> Result<Self, FremkitError> {
+        serde_json::from_slice(&buffer).map_err(|e| FremkitError::from(e))
     }
 }
 
 impl TryInto<Vec<u8>> for Answer {
-    type Error = anyhow::Error;
+    type Error = FremkitError;
 
-    fn try_into(self) -> Result<Vec<u8>> {
-        serde_json::to_vec(&self).with_context(|| "could not serialize response")
+    fn try_into(self) -> Result<Vec<u8>, FremkitError> {
+        serde_json::to_vec(&self).map_err(|e| FremkitError::from(e))
     }
 }

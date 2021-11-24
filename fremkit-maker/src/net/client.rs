@@ -1,13 +1,14 @@
 use std::sync::{Arc, Mutex};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::{debug, error};
 use zmq::{poll, Context, PollEvents, Socket};
 
 use crate::{
     core::state::State,
+    error::FremkitError,
     protocol::{
-        command::Command,
+        command::{Command, Response},
         query::{Answer, Query},
     },
 };
@@ -26,9 +27,9 @@ pub struct Client {
 impl Client {
     pub fn new(host: &str, state: Arc<Mutex<State>>) -> Result<Self> {
         let ctx = Context::new();
-        let msg = ctx.socket(zmq::SUB)?;
-        let cmd = ctx.socket(zmq::PUSH)?;
         let qry = ctx.socket(zmq::DEALER)?;
+        let cmd = ctx.socket(zmq::DEALER)?;
+        let msg = ctx.socket(zmq::SUB)?;
 
         msg.set_subscribe(b"")?;
 
@@ -70,51 +71,59 @@ impl Client {
 
         let items = &mut [
             self.qry.as_poll_item(PollEvents::POLLIN),
-            self.msg.as_poll_item(PollEvents::POLLIN),
+            self.cmd.as_poll_item(PollEvents::POLLIN),
         ];
         let timer = poll(items, timeout);
 
-        match timer {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error polling for sockets: {:?}", e);
-                return Err(anyhow::anyhow!("TODO: use custom error: {:?}", e));
-            }
+        if let Err(e) = timer {
+            error!("Error polling for sockets: {:?}", e);
+            bail!(FremkitError::NetworkError(e));
         }
 
         if items[0].is_readable() {
-            let answer = self.qry.recv_bytes(0)?;
-            let answer = Answer::try_from(answer)?;
-
-            debug!("Received: {:?}", answer);
-
-            match answer {
-                Answer::Snapshot(s) => {
-                    let mut lock = self.state.lock().unwrap();
-                    *lock = State::from(s);
-
-                    debug!("State updated: {:?}", self.state);
-                }
-                Answer::ChecksumFailed => {
-                    debug!("Checksum FAILED!");
-                }
-                Answer::ChecksumOk => {
-                    debug!("Checksum OK!");
-                }
-            };
+            self.handle_answer()?;
         }
 
         if items[1].is_readable() {
-            let data = self.msg.recv_bytes(0)?;
-            let message = serde_json::from_slice(&data)?;
-
-            debug!("Received: {:?}", message);
-
-            let mut lock = self.state.lock().unwrap();
-            lock.update_msg(message);
-
-            debug!("State updated: {:?}", lock);
+            self.handle_response()?;
         }
+
+        Ok(())
+    }
+}
+
+impl Client {
+    /// Handle an answer from the server.
+    fn handle_answer(&self) -> Result<()> {
+        let answer = self.qry.recv_bytes(0)?;
+        let answer = Answer::try_from(answer)?;
+
+        debug!("Received: {:?}", answer);
+
+        match answer {
+            Answer::Snapshot(s) => {
+                let mut lock = self.state.lock().unwrap();
+                *lock = State::from(s);
+
+                debug!("State updated: {:?}", self.state);
+            }
+            Answer::ChecksumFailed => {
+                debug!("Checksum FAILED!");
+            }
+            Answer::ChecksumOk => {
+                debug!("Checksum OK!");
+            }
+        };
+
+        Ok(())
+    }
+
+    /// Handle a response from the server.
+    fn handle_response(&self) -> Result<()> {
+        let response = self.cmd.recv_bytes(0)?;
+        let response = Response::try_from(response)?;
+
+        debug!("Received: {:?}", response);
 
         Ok(())
     }

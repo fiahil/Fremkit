@@ -58,12 +58,22 @@ impl Input {
 
                         println!("OK!");
                     }
-                    ["c", key, val] => {
+                    ["c", "p", key, val] => {
                         println!("COM: update");
 
-                        self.tx_cmd.send(Command::Update {
+                        self.tx_cmd.send(Command::Put {
                             key: key.to_string(),
                             val: val.to_string(),
+                        })?;
+
+                        println!("OK!");
+                    }
+                    ["c", "g", key, idx] => {
+                        println!("COM: fetch");
+
+                        self.tx_cmd.send(Command::Get {
+                            key: key.to_string(),
+                            idx: idx.parse()?,
                         })?;
 
                         println!("OK!");
@@ -76,12 +86,13 @@ impl Input {
                     ["h"] | _ => {
                         println!("HELP:");
 
-                        println!("h          |  (help)      show this help");
-                        println!("w          |  (show)      show local state");
-                        println!("q k        |  (checksum)  send a checksum validation query");
-                        println!("q s        |  (snapshot)  fetch an up-to-date snapshot");
-                        println!("c key val  |  (update)    send an update to the server");
-                        println!("e          |  (exit)      exit the program");
+                        println!("h            |  (help)      show this help");
+                        println!("w            |  (show)      show local state");
+                        println!("q k          |  (checksum)  send a checksum validation query");
+                        println!("q s          |  (snapshot)  fetch an up-to-date snapshot");
+                        println!("c p key val  |  (update)    send an update to the server");
+                        println!("c g key idx  |  (fetch)     get an artefact from the server");
+                        println!("e            |  (exit)      exit the program");
                     }
                 }
             }
