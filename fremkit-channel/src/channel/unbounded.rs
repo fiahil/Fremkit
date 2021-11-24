@@ -82,7 +82,7 @@ impl<T> Channel<T> {
         self.get(index).unwrap()
     }
 
-    /// Get a droplet from the channel.
+    /// Get an element from the channel.
     /// Return None if the index is out of bounds.
     pub fn get(&self, index: usize) -> Option<&T> {
         self.logs
