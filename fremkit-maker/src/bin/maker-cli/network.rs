@@ -6,7 +6,7 @@ use libmaker::protocol::command::Command;
 use libmaker::protocol::query::Query;
 
 use anyhow::Result;
-use log::debug;
+use log::{debug, error};
 
 pub struct Network {
     client: Client,
@@ -25,24 +25,32 @@ impl Network {
         }
     }
 
-    pub fn start(self) -> JoinHandle<Result<()>> {
-        thread::spawn(move || {
+    pub fn start(self) -> JoinHandle<()> {
+        fn inner(s: Network) -> Result<()> {
             loop {
-                debug!("Pending queries  to send: {}", self.rx_qry.len());
-                debug!("Pending commands to send: {}", self.rx_cmd.len());
+                debug!("Pending queries  to send: {}", s.rx_qry.len());
+                debug!("Pending commands to send: {}", s.rx_cmd.len());
 
                 // send pending queries to the server
-                for queries in self.rx_qry.try_iter() {
-                    self.client.send_query(queries)?;
+                for queries in s.rx_qry.try_iter() {
+                    s.client.send_query(queries)?;
                 }
 
                 // send pending commands to the server
-                for command in self.rx_cmd.try_iter() {
-                    self.client.send_command(command)?;
+                for command in s.rx_cmd.try_iter() {
+                    s.client.send_command(command)?;
                 }
 
                 // wait for a response from the server
-                self.client.poll(500)?;
+                s.client.poll(500)?;
+            }
+        }
+
+        thread::spawn(move || {
+            let outcome = inner(self);
+
+            if let Err(e) = outcome {
+                error!("{}", e);
             }
         })
     }

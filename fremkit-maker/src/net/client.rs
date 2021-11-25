@@ -136,7 +136,7 @@ impl Client {
 
     /// Handle a message from the server.
     fn handle_message(&self) -> Result<()> {
-        let message = self.cmd.recv_bytes(0)?;
+        let message = self.msg.recv_bytes(0)?;
         let message = Message::try_from(message)?;
 
         debug!("Received: {:?}", message);

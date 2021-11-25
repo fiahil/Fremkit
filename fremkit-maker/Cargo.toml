@@ -28,5 +28,5 @@ name = "maker"
 path = "src/bin/maker/main.rs"
 
 [[bin]]
-name = "client"
-path = "src/bin/client/main.rs"
+name = "maker-cli"
+path = "src/bin/maker-cli/main.rs"
