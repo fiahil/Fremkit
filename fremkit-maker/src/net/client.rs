@@ -9,6 +9,7 @@ use crate::{
     error::FremkitError,
     protocol::{
         command::{Command, Response},
+        message::Message,
         query::{Answer, Query},
     },
 };
@@ -72,6 +73,7 @@ impl Client {
         let items = &mut [
             self.qry.as_poll_item(PollEvents::POLLIN),
             self.cmd.as_poll_item(PollEvents::POLLIN),
+            self.msg.as_poll_item(PollEvents::POLLIN),
         ];
         let timer = poll(items, timeout);
 
@@ -86,6 +88,10 @@ impl Client {
 
         if items[1].is_readable() {
             self.handle_response()?;
+        }
+
+        if items[2].is_readable() {
+            self.handle_message()?;
         }
 
         Ok(())
@@ -124,6 +130,16 @@ impl Client {
         let response = Response::try_from(response)?;
 
         debug!("Received: {:?}", response);
+
+        Ok(())
+    }
+
+    /// Handle a message from the server.
+    fn handle_message(&self) -> Result<()> {
+        let message = self.cmd.recv_bytes(0)?;
+        let message = Message::try_from(message)?;
+
+        debug!("Received: {:?}", message);
 
         Ok(())
     }

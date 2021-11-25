@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use anyhow::{bail, Result};
 use log::{debug, error};
 use zmq::{poll, Context, PollEvents, Socket};
@@ -5,6 +7,7 @@ use zmq::{poll, Context, PollEvents, Socket};
 use crate::core::state::State;
 use crate::error::FremkitError;
 use crate::protocol::command::Command;
+use crate::protocol::message::Message;
 use crate::protocol::query::Query;
 
 pub struct Server {
@@ -14,6 +17,8 @@ pub struct Server {
     cmd: Socket,
     /// The socket used to send broadcast messages to the client.
     msg: Socket,
+
+    heartbeat_timer: Duration,
 
     state: State,
 }
@@ -33,19 +38,22 @@ impl Server {
             qry,
             cmd,
             msg,
+            heartbeat_timer: Duration::from_secs(10),
             state: State::new(),
         })
     }
 
     pub fn run(self) -> Result<()> {
-        loop {
-            debug!("Polling...");
+        self.send_heartbeat()?;
+        let mut last_heartbeat = Instant::now();
 
+        debug!("Starting poll loop...");
+        loop {
             let items = &mut [
                 self.qry.as_poll_item(PollEvents::POLLIN),
                 self.cmd.as_poll_item(PollEvents::POLLIN),
             ];
-            let timer = poll(items, 5000);
+            let timer = poll(items, 10);
 
             if let Err(e) = timer {
                 error!("Error polling for sockets: {:?}", e);
@@ -59,11 +67,25 @@ impl Server {
             if items[1].is_readable() {
                 self.handle_command()?;
             }
+
+            if last_heartbeat.elapsed() > self.heartbeat_timer {
+                self.send_heartbeat()?;
+                last_heartbeat = Instant::now();
+            }
         }
     }
 }
 
 impl Server {
+    /// Send a heartbeat message to the client.
+    fn send_heartbeat(&self) -> Result<()> {
+        let msg: Vec<u8> = Message::Heartbeat.try_into()?;
+
+        self.msg.send(msg, 0)?;
+
+        Ok(())
+    }
+
     /// Handle a query from the client.
     fn handle_query(&self) -> Result<()> {
         let id = self.qry.recv_bytes(0)?;
