@@ -3,7 +3,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Instant;
 
-use fremkit_channel::bounded::Log;
+use fremkit::bounded::Log;
 
 use criterion::measurement::WallTime;
 use criterion::{

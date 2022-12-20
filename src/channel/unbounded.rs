@@ -240,7 +240,6 @@ impl<T> Reader<T> {
 #[cfg(test)]
 mod test {
 
-    use fremkit_macro::with_loom;
     use log::debug;
 
     use crate::sync::thread;
@@ -252,7 +251,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_channel_length() {
         init();
 
@@ -268,7 +266,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_channel_increase() {
         init();
 
@@ -291,7 +288,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_channel() {
         init();
 

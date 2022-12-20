@@ -1,10 +1,37 @@
-[workspace]
+[package]
+name = "fremkit"
+version = "0.1.0"
+edition = "2021"
 resolver = "2"
-members = [
-    "fremkit-macro",
-    "fremkit-channel",
-    "fremkit-maker",
-]
+authors = ["Quentin Leffray <fiahil@gmail.com>"]
+description = "A simple channel-like broadcast log"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "^0.4"
+parking_lot = "^0.12"
+thiserror = "^1.0"
+
+[target.'cfg(loom)'.dependencies]
+loom = { version = "0.5.6", features = ["checkpoint"] }
+
+[dev-dependencies]
+criterion = { version = "0.4.0", features = ["html_reports"] }
+crossbeam-channel = "0.5.6"
+env_logger = "0.10.0"
 
 [profile.release]
 lto = true
+
+[lib]
+bench = false
+
+[[bench]]
+name = "bounded"
+harness = false
+
+[[bench]]
+name = "unbounded"
+harness = false
+

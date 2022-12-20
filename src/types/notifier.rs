@@ -95,14 +95,12 @@ impl Notifier {
 
 #[cfg(test)]
 mod test {
-    use fremkit_macro::with_loom;
 
     use super::*;
 
     use crate::sync::thread;
 
     #[test]
-    #[with_loom]
     fn test_can_notify() {
         let notifier = Notifier::new();
 
@@ -110,7 +108,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_notifier() {
         let n = Notifier::new();
         let nx = n.clone();
@@ -129,7 +126,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_broadcast() {
         let n = Notifier::new();
         let (a, b) = (n.clone(), n.clone());
@@ -152,7 +148,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_notify_if() {
         let n = Notifier::new();
         let (a, b) = (n.clone(), n.clone());

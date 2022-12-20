@@ -1,4 +1,4 @@
-use fremkit_channel::bounded::Log;
+use fremkit::bounded::Log;
 
 const N: usize = 10_000;
 

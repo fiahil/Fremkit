@@ -158,7 +158,6 @@ impl<T> Reader<T> {
 mod test {
     use std::sync::Arc;
 
-    use fremkit_macro::with_loom;
     use log::debug;
 
     use crate::sync::thread;
@@ -178,7 +177,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     #[should_panic]
     fn test_log_capacity_excess() {
         init();
@@ -190,7 +188,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_log_capacity_excess_len() {
         init();
 
@@ -206,7 +203,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_log_immutable_entries() {
         init();
 
@@ -225,7 +221,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_basic_log() {
         init();
 
@@ -242,7 +237,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_eventual_consistency() {
         init();
 

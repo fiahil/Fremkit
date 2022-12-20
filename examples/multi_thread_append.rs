@@ -1,7 +1,7 @@
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use fremkit_channel::unbounded::Channel;
+use fremkit::unbounded::Channel;
 use log::{info, warn};
 
 const THREADS: usize = 64;

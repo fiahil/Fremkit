@@ -207,7 +207,6 @@ impl<'a, T> Iterator for ListIterator<'a, T> {
 #[cfg(test)]
 mod test {
 
-    use fremkit_macro::with_loom;
     use log::debug;
 
     use super::*;
@@ -222,7 +221,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_list_basics() {
         init();
 
@@ -243,7 +241,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_list_iter() {
         init();
 
@@ -260,7 +257,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_list_multi_thread_append() {
         init();
 
@@ -311,7 +307,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_cache_basics() {
         init();
 
@@ -327,7 +322,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_rollover_basics() {
         init();
 
@@ -344,7 +338,6 @@ mod test {
     }
 
     #[test]
-    #[with_loom]
     fn test_rollover_complete() {
         init();
 
