@@ -103,6 +103,12 @@ impl<T> Log<T> {
     pub fn into_reader(self: Arc<Self>) -> Reader<T> {
         Reader { log: self }
     }
+
+    /// Create an iterator over the log.
+    /// When reaching the end of the channel, the iterator will stop.
+    pub fn iter(&self) -> LogReaderIterator<T> {
+        LogReaderIterator { idx: 0, log: self }
+    }
 }
 
 /// Open a new log with a given capacity.
@@ -151,6 +157,22 @@ impl<T> Reader<T> {
     /// Convert the Reader into its inner Log.
     pub fn into_inner(self) -> Arc<Log<T>> {
         self.log
+    }
+}
+
+pub struct LogReaderIterator<'a, T> {
+    idx: usize,
+    log: &'a Log<T>,
+}
+
+impl<'a, T> Iterator for LogReaderIterator<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let idx = self.idx;
+        self.idx += 1;
+
+        self.log.get(idx)
     }
 }
 
