@@ -292,8 +292,8 @@ criterion_group!(
     benches,
     bench_single_thread_append,
     bench_2_thread_append,
-    bench_8_thread_append,
-    bench_2_thread_read,
-    bench_8_thread_read
+    // bench_8_thread_append,
+    // bench_2_thread_read,
+    // bench_8_thread_read
 );
 criterion_main!(benches);

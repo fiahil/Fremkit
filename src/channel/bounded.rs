@@ -2,24 +2,40 @@ use crate::sync::{AtomicUsize, Ordering};
 use crate::ChannelError;
 
 use std::cell::UnsafeCell;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-/// This Log stores an immutable, append-only, bounded, sequence of items.
-/// It's a wrapper around a fixed-size vector, and it's thread-safe.
+use cache_padded::CachePadded;
+
+/// This Log stores an immutable, append-only, bounded, concurrent sequence of items.
+/// It's a performance-minded wrapper around a fixed-size vector, and is thread-safe.
 ///
-/// All data sent on the Log will become available in the same order as it was sent,
-/// and will always be available at the returned index. No push will ever block the
-/// calling thread. When the log becomes full, pushes will fail and return an error.
+/// A Log's primary use case is to store an immutable sequence of messages, events, or other data, and to allow
+/// multiple readers to access the data concurrently.
+///
+/// Performance-wise, the Log aim to be almost as fast as a `Vec` for single-threaded push operations, and
+/// will be equally fast for get operations.
+/// For multi-threaded push operations, the Log supports them ; unlike a `Vec` wrapped in a `Mutex` or `RwLock`.
+/// For multi-threaded get operations, the Log will be faster than a `Vec` wrapped in a `RwLock`.
+///
+/// Operations on Log are lock-free, and will never block.
+/// The Log also supports concurrent push get operations.
+/// The Log will never be resized, and will always have the same capacity.
+///
+/// All data pushed on the Log will become available for get in the same order as it was pushed,
+/// and will always be available at the returned index.
+///
+/// When the Log becomes full, push will fail and return an error. A get to an existing index will always succeed.
 #[derive(Debug)]
 pub struct Log<T> {
-    capacity: NonZeroUsize,
+    capacity: usize,
+    len: CachePadded<AtomicUsize>,
     data: Vec<UnsafeCell<Option<T>>>,
-    len: AtomicUsize,
 }
 
 impl<T> Log<T> {
-    /// Create a new empty Log.
+    /// Create a new empty Log. It will be able to hold at least `capacity` items.
+    /// If `capacity` is 0, the Log will be created with a capacity of 1.
+    ///
     pub fn new(capacity: usize) -> Self {
         // Specifying capacity here, means we are able to hold at least
         // this many items without reallocating.
@@ -31,8 +47,8 @@ impl<T> Log<T> {
         }
 
         Self {
-            capacity: NonZeroUsize::new(capacity).expect("Cannot create a 0 capacity Log"),
-            len: AtomicUsize::new(0),
+            capacity: capacity.max(1),
+            len: CachePadded::new(AtomicUsize::new(0)),
             data,
         }
     }
@@ -46,7 +62,7 @@ impl<T> Log<T> {
     /// Get the capacity of the log.
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.capacity.get()
+        self.capacity
     }
 
     /// Is the log empty ?
@@ -70,7 +86,7 @@ impl<T> Log<T> {
     /// Append an item to the log.
     /// Returns the index of the appended item.
     pub fn push(&self, value: T) -> Result<usize, ChannelError<T>> {
-        let token = self.len.fetch_add(1, Ordering::AcqRel);
+        let token = self.len.fetch_add(1, Ordering::Relaxed);
 
         if token >= self.capacity() {
             return Err(ChannelError::LogCapacityExceeded(value));
@@ -78,9 +94,8 @@ impl<T> Log<T> {
 
         let cell = &self.data[token];
 
-        unsafe {
-            cell.get().write(Some(value));
-        }
+        let slot = unsafe { &mut *cell.get() };
+        slot.replace(value); // takes a lot of time, memory copy ? (not sure) but it's the bottleneck. maybe try to use the stack Box<[T]> ?
 
         Ok(token)
     }
