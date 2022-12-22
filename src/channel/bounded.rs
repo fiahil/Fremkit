@@ -14,8 +14,9 @@ use cache_padded::CachePadded;
 ///
 /// Performance-wise, the Log aim to be almost as fast as a `Vec` for single-threaded push operations, and
 /// will be equally fast for get operations.
-/// For multi-threaded push operations, the Log supports them ; unlike a `Vec` wrapped in a `Mutex` or `RwLock`.
+/// For multi-threaded push operations, the Log should be as fast as a `Vec` wrapped in a `Mutex` or `RwLock`.
 /// For multi-threaded get operations, the Log will be faster than a `Vec` wrapped in a `RwLock`.
+/// Additional performance analysis are available in the benchmarks.
 ///
 /// Operations on Log are lock-free, and will never block.
 /// The Log also supports concurrent push get operations.
@@ -27,8 +28,8 @@ use cache_padded::CachePadded;
 /// When the Log becomes full, push will fail and return an error. A get to an existing index will always succeed.
 #[derive(Debug)]
 pub struct Log<T> {
-    capacity: usize,
     len: CachePadded<AtomicUsize>,
+    capacity: usize,
     data: Vec<UnsafeCell<Option<T>>>,
 }
 
@@ -37,6 +38,8 @@ impl<T> Log<T> {
     /// If `capacity` is 0, the Log will be created with a capacity of 1.
     ///
     pub fn new(capacity: usize) -> Self {
+        let capacity = capacity.max(1);
+
         // Specifying capacity here, means we are able to hold at least
         // this many items without reallocating.
         let mut data = Vec::with_capacity(capacity);
@@ -47,7 +50,7 @@ impl<T> Log<T> {
         }
 
         Self {
-            capacity: capacity.max(1),
+            capacity,
             len: CachePadded::new(AtomicUsize::new(0)),
             data,
         }
@@ -95,7 +98,7 @@ impl<T> Log<T> {
         let cell = &self.data[token];
 
         let slot = unsafe { &mut *cell.get() };
-        slot.replace(value); // takes a lot of time, memory copy ? (not sure) but it's the bottleneck. maybe try to use the stack Box<[T]> ?
+        *slot = Some(value);
 
         Ok(token)
     }
