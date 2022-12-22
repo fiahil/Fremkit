@@ -10,10 +10,10 @@ lint:			## Run clippy
 loom:			## Run tests with loom
 	RUSTFLAGS="--cfg loom" \
 	LOOM_MAX_PREEMPTIONS=2 \
-	cargo test --release
+	cargo test log::bounded::test::test_loom
 
 test:			## Run tests
-	cargo test --doc --release
+	cargo test --doc
 
 sanitizer:		## Run tests with sanitizer
 	RUSTFLAGS="-Zsanitizer=address" \

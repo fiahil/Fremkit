@@ -152,7 +152,7 @@ impl<T> Log<T> {
     /// assert_eq!(log.get(123), None);
     /// ```
     pub fn get(&self, index: usize) -> Option<&T> {
-        if index > self.len() {
+        if index >= self.len() {
             return None;
         }
 
@@ -359,22 +359,36 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
-    fn test_log_capacity() {
-        init();
-
-        let _log: Log<u32> = Log::new(0);
+    #[cfg(loom)]
+    fn test_loom() {
+        loom::model(test_log_capacity);
+        loom::model(test_log_capacity_excess);
+        loom::model(test_log_capacity_excess_len);
+        loom::model(test_log_immutable_entries);
+        loom::model(test_basic_log);
+        loom::model(test_log_iter);
+        loom::model(test_send_recv);
+        loom::model(test_eventual_consistency);
     }
 
     #[test]
-    #[should_panic]
+    fn test_log_capacity() {
+        init();
+
+        let log: Log<u32> = Log::new(0);
+
+        assert_eq!(log.capacity(), 1);
+    }
+
+    #[test]
     fn test_log_capacity_excess() {
         init();
 
         let log = Log::new(1);
 
         log.push(0).unwrap();
-        log.push(1).unwrap();
+
+        assert!(log.push(1).is_err());
     }
 
     #[test]
@@ -420,10 +434,48 @@ mod test {
         log.push(2).unwrap();
         log.push(3).unwrap();
 
-        assert_eq!(log.get(0).map(|s| *s), Some(1));
-        assert_eq!(log.get(1).map(|s| *s), Some(2));
-        assert_eq!(log.get(2).map(|s| *s), Some(3));
+        assert_eq!(log.get(0), Some(&1));
+        assert_eq!(log.get(1), Some(&2));
+        assert_eq!(log.get(2), Some(&3));
         assert_eq!(log.get(3), None);
+    }
+
+    #[test]
+    fn test_log_iter() {
+        init();
+
+        let log = Log::new(3);
+
+        log.push(1).unwrap();
+        log.push(2).unwrap();
+        log.push(3).unwrap();
+
+        let mut iter = log.iter();
+
+        assert_eq!(iter.next(), Some(&1));
+        assert_eq!(iter.next(), Some(&2));
+        assert_eq!(iter.next(), Some(&3));
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_send_recv() {
+        init();
+
+        let (tx, rx) = open(4);
+
+        tx.send(1).unwrap();
+        tx.send(2).unwrap();
+        tx.send(3).unwrap();
+
+        assert_eq!(rx.recv(0), Some(&1));
+        assert_eq!(rx.recv(1), Some(&2));
+        assert_eq!(rx.recv(2), Some(&3));
+        assert_eq!(rx.recv(3), None);
+
+        tx.into_inner().push(4).unwrap();
+
+        assert_eq!(rx.recv(3), Some(&4));
     }
 
     #[test]
