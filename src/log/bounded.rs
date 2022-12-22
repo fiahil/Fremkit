@@ -1,3 +1,5 @@
+//! This module contains the implementation of the bounded `Log` type.
+
 use crate::sync::{AtomicUsize, Ordering};
 use crate::LogError;
 
@@ -7,6 +9,7 @@ use std::sync::Arc;
 use cache_padded::CachePadded;
 
 /// This Log stores an immutable, append-only, bounded, concurrent sequence of items.
+///
 /// It's a performance-minded wrapper around a fixed-size vector, and is thread-safe.
 ///
 /// A Log's primary use case is to store an immutable sequence of messages, events, or other data, and to allow

@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 resolver = "2"
 authors = ["Quentin Leffray <fiahil@gmail.com>"]
-description = "A simple channel-like broadcast log"
+description = "A simple broadcast log"
+license = "Apache-2.0"
+homepage = "https://github.com/fiahil/Fremkit"
+repository = "https://github.com/fiahil/Fremkit"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
