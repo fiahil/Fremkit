@@ -1,5 +1,5 @@
 use crate::sync::{AtomicUsize, Ordering};
-use crate::ChannelError;
+use crate::LogError;
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;
@@ -26,6 +26,22 @@ use cache_padded::CachePadded;
 /// and will always be available at the returned index.
 ///
 /// When the Log becomes full, push will fail and return an error. A get to an existing index will always succeed.
+///
+/// # Examples
+/// ```
+/// use fremkit::bounded::Log;
+///
+/// let log: Log<u64> = Log::new(100);
+/// log.push(1).unwrap();
+/// log.push(2).unwrap();
+///
+/// assert_eq!(log.get(0), Some(&1));
+/// assert_eq!(log.get(1), Some(&2));
+/// assert_eq!(log.get(2), None);
+///
+/// assert_eq!(log.len(), 2);
+/// assert_eq!(log.capacity(), 100);
+/// ```
 #[derive(Debug)]
 pub struct Log<T> {
     len: CachePadded<AtomicUsize>,
@@ -37,6 +53,12 @@ impl<T> Log<T> {
     /// Create a new empty Log. It will be able to hold at least `capacity` items.
     /// If `capacity` is 0, the Log will be created with a capacity of 1.
     ///
+    /// # Examples
+    /// ```
+    /// use fremkit::bounded::Log;
+    ///
+    /// let log: Log<u64> = Log::new(100);
+    /// ```
     pub fn new(capacity: usize) -> Self {
         let capacity = capacity.max(1);
 
@@ -57,46 +79,134 @@ impl<T> Log<T> {
     }
 
     /// Get the current length of the log.
+    ///
+    /// This is the number of items that have been pushed on the log.
+    /// It will never be greater than the capacity of the log.
+    ///
+    /// # Examples
+    /// ```
+    /// use fremkit::bounded::Log;
+    ///
+    /// let log: Log<u64> = Log::new(100);
+    /// log.push(1).unwrap();
+    /// log.push(2).unwrap();
+    ///
+    /// assert_eq!(log.len(), 2);
+    /// ```
     #[inline]
     pub fn len(&self) -> usize {
         self.len.load(Ordering::Relaxed).min(self.capacity())
     }
 
     /// Get the capacity of the log.
+    ///
+    /// This is the maximum number of items that can be pushed on the log.
+    ///
+    /// # Examples
+    /// ```
+    /// use fremkit::bounded::Log;
+    ///
+    /// let log: Log<u64> = Log::new(100);
+    ///
+    /// assert_eq!(log.capacity(), 100);
+    /// ```
     #[inline]
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
     /// Is the log empty ?
+    ///
+    /// # Examples
+    /// ```
+    /// use fremkit::bounded::Log;
+    ///
+    /// let log: Log<u64> = Log::new(100);
+    ///
+    /// assert!(log.is_empty());
+    /// ```
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Get an item from the log.
-    /// Returns `None` if the given index is out of bounds.
+    ///
+    /// # Arguments
+    /// * `index` - The index of the item to get.
+    ///
+    /// # Returns
+    /// A reference to the item at the given index, or `None` if the index is out of bounds.
+    ///
+    /// # Examples
+    /// ```
+    /// use fremkit::bounded::Log;
+    ///
+    /// let log: Log<u64> = Log::new(100);
+    /// log.push(1).unwrap();
+    /// log.push(2).unwrap();
+    ///
+    /// assert_eq!(log.get(0), Some(&1));
+    /// assert_eq!(log.get(1), Some(&2));
+    /// assert_eq!(log.get(2), None);
+    /// assert_eq!(log.get(123), None);
+    /// ```
     pub fn get(&self, index: usize) -> Option<&T> {
-        if index > self.capacity() - 1 {
+        if index > self.len() {
             return None;
         }
 
+        // SAFETY: We know that the index is in bounds, and that the cell is initialized.
+        // We also know that the cell will not be modified while we are holding a reference to it.
+        // This is because the cell is never modified. The only way to modify the cell is to push an item,
+        // and this will only happen if the cell is empty.
+        // We also know that the cell will not be dropped while we are holding a reference to it.
         let cell = &self.data[index];
 
         unsafe { (*cell.get()).as_ref() }
     }
 
     /// Append an item to the log.
-    /// Returns the index of the appended item.
-    pub fn push(&self, value: T) -> Result<usize, ChannelError<T>> {
+    ///
+    /// Once the item has been appended, it will be available for get at the returned index.
+    /// The index will always be in the range [0, capacity). Items cannot be removed from the log.
+    /// If the log is full, the item will not be appended, and an error containing the item will be returned.
+    ///
+    /// # Arguments
+    /// * `value` - The item to append.
+    ///
+    /// # Returns
+    /// The index of the item in the log, or an error containing the item if the log is full.
+    ///
+    /// # Examples
+    /// ```
+    /// use fremkit::bounded::Log;
+    ///
+    /// let log: Log<u64> = Log::new(100);
+    /// assert_eq!(log.push(1).unwrap(), 0);
+    /// assert_eq!(log.push(2).unwrap(), 1);
+    ///
+    /// assert_eq!(log.get(0), Some(&1));
+    /// assert_eq!(log.get(1), Some(&2));
+    /// ```
+    pub fn push(&self, value: T) -> Result<usize, LogError<T>> {
+        // Get the next token.
+        // This is the index the item will be written to.
+        // INVARIANT: The token will always be in the range [0, capacity).
+        // INVARIANT: The token will always be unique.
+        // INVARIANT: The series of tokens will always be monotonically increasing.
         let token = self.len.fetch_add(1, Ordering::Relaxed);
 
         if token >= self.capacity() {
-            return Err(ChannelError::LogCapacityExceeded(value));
+            return Err(LogError::LogCapacityExceeded(value));
         }
 
+        // Get the cell to write to.
+        // SAFETY: The token is always in the range [0, capacity).
         let cell = &self.data[token];
 
+        // SAFETY: Cells can only be written to once, and we are the only writer.
+        // SAFETY: It is safe to write to the cell, as it cannot be read from until we first write to it.
         let slot = unsafe { &mut *cell.get() };
         *slot = Some(value);
 
@@ -108,7 +218,8 @@ unsafe impl<T: Sync + Send> Send for Log<T> {}
 unsafe impl<T: Sync + Send> Sync for Log<T> {}
 
 //
-// Public API similar to std::sync::mpsc::channel for easier consumption.
+// Public API similar to std::sync::mpsc::channel simplified consumption.
+// Please note that the API does not make complete sense for a bounded log.
 //
 
 impl<T> Log<T> {
@@ -117,32 +228,55 @@ impl<T> Log<T> {
         Sender { log: self }
     }
 
-    /// Convert the Log into a Reader.
-    pub fn into_reader(self: Arc<Self>) -> Reader<T> {
-        Reader { log: self }
+    /// Convert the Log into a Receiver.
+    ///
+    /// Please note that 'Receiver' is not a good name for the reading end of a Log,
+    /// but it is used for consistency with the std::sync::mpsc::channel API.
+    pub fn into_receiver(self: Arc<Self>) -> Receiver<T> {
+        Receiver { log: self }
     }
 
     /// Create an iterator over the log.
+    ///
+    /// The iterator will start at the beginning of the channel.
     /// When reaching the end of the channel, the iterator will stop.
+    ///
+    /// # Examples
+    /// ```
+    /// use fremkit::bounded::Log;
+    ///
+    /// let log: Log<u64> = Log::new(100);
+    /// log.push(1).unwrap();
+    /// log.push(2).unwrap();
+    ///
+    /// for item in log.iter() {
+    ///    println!("{}", item);
+    /// }
+    /// ```
     pub fn iter(&self) -> LogReaderIterator<T> {
         LogReaderIterator { idx: 0, log: self }
     }
 }
 
 /// Open a new log with a given capacity.
-/// Returns a Sender and a Reader.
-pub fn open<T>(capacity: usize) -> (Sender<T>, Reader<T>) {
-    let channel = Arc::new(Log::new(capacity));
+///
+/// The capacity is the maximum number of items that can be stored in the log.
+///
+/// # Arguments
+/// * `capacity` - The maximum number of items that can be stored in the log.
+///
+/// # Returns
+/// A Sender and a Receiver.
+pub fn open<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
+    let log = Arc::new(Log::new(capacity));
 
-    (
-        Sender {
-            log: channel.clone(),
-        },
-        Reader { log: channel },
-    )
+    (Sender { log: log.clone() }, Receiver { log })
 }
 
 /// Sender half of a Log.
+///
+/// The Sender can be cloned, and the clones will all refer to the same Log.
+/// Note, this struct is provided for compatibilities with the std::sync::mpsc::channel API.
 #[derive(Debug, Clone)]
 pub struct Sender<T> {
     log: Arc<Log<T>>,
@@ -150,7 +284,13 @@ pub struct Sender<T> {
 
 impl<T> Sender<T> {
     /// Send an item to the Log.
-    pub fn send(&self, value: T) -> Result<usize, ChannelError<T>> {
+    ///
+    /// # Arguments
+    /// * `value` - The item to send.
+    ///
+    /// # Returns
+    /// The index of the item in the log, or an error containing the item if the log is full.
+    pub fn send(&self, value: T) -> Result<usize, LogError<T>> {
         self.log.push(value)
     }
 
@@ -161,14 +301,23 @@ impl<T> Sender<T> {
 }
 
 /// Reader half of a Log.
+///
+/// The Reader can be cloned, and the clones will all refer to the same Log.
+/// Note, this struct is provided for compatibilities with the std::sync::mpsc::channel API.
 #[derive(Debug, Clone)]
-pub struct Reader<T> {
+pub struct Receiver<T> {
     log: Arc<Log<T>>,
 }
 
-impl<T> Reader<T> {
+impl<T> Receiver<T> {
     /// Read an item from the Log at a given index.
-    pub fn read(&self, index: usize) -> Option<&T> {
+    ///
+    /// # Arguments
+    /// * `index` - The index of the item to read, or receive.
+    ///
+    /// # Returns
+    /// The item at the given index, or None if the index is out of bounds.
+    pub fn recv(&self, index: usize) -> Option<&T> {
         self.log.get(index)
     }
 
@@ -178,6 +327,7 @@ impl<T> Reader<T> {
     }
 }
 
+/// Iterator over the items in a Log.
 pub struct LogReaderIterator<'a, T> {
     idx: usize,
     log: &'a Log<T>,

@@ -13,7 +13,7 @@ loom:			## Run tests with loom
 	cargo test --release
 
 test:			## Run tests
-	cargo test
+	cargo test --doc --release
 
 sanitizer:		## Run tests with sanitizer
 	RUSTFLAGS="-Zsanitizer=address" \
@@ -25,7 +25,7 @@ sanitizer:		## Run tests with sanitizer
 
 bench:			## Run benchmarks
 	@mv dist/benchmark target/criterion 2> /dev/null || true
-	cargo bench --bench bounded -- --sample-size 500 --noise-threshold 0.05
+	cargo bench -- --sample-size 500 --noise-threshold 0.05
 	mv target/criterion dist/benchmark
 
 all:			## Run all tests and checks

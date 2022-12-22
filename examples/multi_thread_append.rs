@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use fremkit::bounded::Log;
-use fremkit::ChannelError;
+use fremkit::LogError;
 
 const THREADS: usize = 8;
 
@@ -15,7 +15,7 @@ pub fn main() {
     let log = Arc::new(Log::new(50_000_000));
 
     // Setting up threads
-    let mut threads: Vec<thread::JoinHandle<Result<(), ChannelError<u64>>>> =
+    let mut threads: Vec<thread::JoinHandle<Result<(), LogError<u64>>>> =
         Vec::with_capacity(THREADS);
     let barrier = Arc::new(Barrier::new(THREADS + 1));
     let alarm = Arc::new(AtomicBool::new(false));

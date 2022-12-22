@@ -33,8 +33,3 @@ bench = false
 [[bench]]
 name = "bounded"
 harness = false
-
-[[bench]]
-name = "unbounded"
-harness = false
-

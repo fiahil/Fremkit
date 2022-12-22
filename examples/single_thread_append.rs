@@ -1,6 +1,6 @@
 use fremkit::bounded::Log;
 
-const N: usize = 10_000;
+const N: usize = 100;
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let channel: Log<u64> = Log::new(N);
