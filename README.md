@@ -1,5 +1,7 @@
 # Fremkit
 
+![Crates.io](https://img.shields.io/crates/v/fremkit) ![docs.rs](https://img.shields.io/docsrs/fremkit)
+
 Fremkit is simple broadcast log.
 
 A Log's primary use case is to store an immutable sequence of messages, events, or other data, and to allow multiple readers to access the data concurrently.
